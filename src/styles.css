@@ -146,6 +146,41 @@ h1 {
   transition: transform 0.15s;
 }
 
+.card.picked {
+  outline: 3px solid #6fd97a;
+  transform: translateY(-6px);
+  box-shadow: 0 0 14px rgba(111, 217, 122, 0.8);
+}
+
+/* ---------- 换牌飞行动画 ---------- */
+.flight-card {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 62px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(45deg, #7a2b2b, #7a2b2b 6px, #963a3a 6px, #963a3a 12px);
+  border: 3px solid #fdfbf5;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+  z-index: 50;
+  pointer-events: none;
+  animation: card-fly 0.75s cubic-bezier(0.45, 0, 0.35, 1) forwards;
+}
+
+@keyframes card-fly {
+  0% {
+    transform: translate(var(--x0), var(--y0)) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate(calc((var(--x0) + var(--x1)) / 2), calc((var(--y0) + var(--y1)) / 2 - 48px))
+      scale(1.2) rotate(10deg);
+  }
+  100% {
+    transform: translate(var(--x1), var(--y1)) scale(1) rotate(0deg);
+  }
+}
+
 /* ---------- 牌桌 ---------- */
 .table-screen {
   display: flex;
@@ -197,6 +232,15 @@ h1 {
   cursor: pointer;
   border-color: #6fd97a;
   box-shadow: 0 0 12px rgba(111, 217, 122, 0.6);
+}
+
+.seat-picking {
+  border-color: #6fd97a;
+  box-shadow: 0 0 16px rgba(111, 217, 122, 0.7);
+}
+
+.seat-picking .card-back.selectable:hover {
+  transform: translateY(-10px);
 }
 
 .seat-name {

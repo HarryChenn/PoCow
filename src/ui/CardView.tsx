@@ -5,33 +5,45 @@ interface Props {
   hidden?: boolean;
   small?: boolean;
   selectable?: boolean;
+  /** 被选中待交换的高亮 */
+  picked?: boolean;
+  /** 用于交换动画定位 */
+  dataId?: string;
   onClick?: () => void;
 }
 
-export function CardView({ card, hidden, small, selectable, onClick }: Props) {
-  const size = small ? 'card-sm' : '';
+export function CardView({ card, hidden, small, selectable, picked, dataId, onClick }: Props) {
+  const cls = [
+    'card',
+    small ? 'card-sm' : '',
+    selectable ? 'selectable' : '',
+    picked ? 'picked' : '',
+  ];
   if (hidden || !card) {
-    return <div className={`card card-back ${size}`} />;
-  }
-  if (isJoker(card)) {
     return (
       <div
-        className={`card card-joker ${size} ${selectable ? 'selectable' : ''}`}
+        className={[...cls, 'card-back'].join(' ')}
+        data-card-id={dataId}
         onClick={onClick}
-      >
-        <span className="card-rank">🃏</span>
-        <span className="card-suit joker-text">JOKER</span>
-      </div>
+      />
     );
   }
-  const red = card.suit === 'H' || card.suit === 'D';
+  let color = 'card-black';
+  if (isJoker(card)) color = 'card-joker';
+  else if (card.suit === 'H' || card.suit === 'D') color = 'card-red';
   return (
-    <div
-      className={`card ${red ? 'card-red' : 'card-black'} ${size} ${selectable ? 'selectable' : ''}`}
-      onClick={onClick}
-    >
-      <span className="card-rank">{rankLabel(card.rank)}</span>
-      <span className="card-suit">{SUIT_SYMBOL[card.suit!]}</span>
+    <div className={[...cls, color].join(' ')} data-card-id={dataId} onClick={onClick}>
+      {isJoker(card) ? (
+        <>
+          <span className="card-rank">🃏</span>
+          <span className="card-suit joker-text">JOKER</span>
+        </>
+      ) : (
+        <>
+          <span className="card-rank">{rankLabel(card.rank)}</span>
+          <span className="card-suit">{SUIT_SYMBOL[card.suit!]}</span>
+        </>
+      )}
     </div>
   );
 }

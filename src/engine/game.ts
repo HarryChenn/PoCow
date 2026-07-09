@@ -24,6 +24,14 @@ export interface PendingRequest {
   to: number;
 }
 
+/** 交换被接受后，双方各从对方手牌中暗选一张（fromPick 是 from 选中的 to 的牌） */
+export interface PickingState {
+  from: number;
+  to: number;
+  fromPick: string | null;
+  toPick: string | null;
+}
+
 export interface RoundResult {
   evals: HandEval[];
   winners: number[];
@@ -38,6 +46,7 @@ export interface GameState {
   phase: 'exchange' | 'showdown';
   turn: number;
   pending: PendingRequest | null;
+  picking: PickingState | null;
   log: string[];
   result: RoundResult | null;
 }
@@ -62,6 +71,7 @@ export function createGame(names: string[], humanIndex: number): GameState {
     phase: 'exchange',
     turn: 0,
     pending: null,
+    picking: null,
     log: [],
     result: null,
   };
@@ -82,6 +92,7 @@ export function startRound(prev: GameState): GameState {
   }
   s.phase = 'exchange';
   s.pending = null;
+  s.picking = null;
   s.result = null;
   s.turn = (s.round - 1) % s.players.length;
   s.log.push(`—— 第 ${s.round} 局开始，${s.players[s.turn].name} 先行动 ——`);
@@ -107,10 +118,6 @@ export function canRequest(s: GameState, pid: number): boolean {
 
 export function hasMoves(s: GameState, pid: number): boolean {
   return canDeckSwap(s, pid) || canRequest(s, pid);
-}
-
-function randomIndex(n: number): number {
-  return Math.floor(Math.random() * n);
 }
 
 function advanceTurn(s: GameState, from: number): GameState {
@@ -162,7 +169,7 @@ export function doRequest(prev: GameState, from: number, to: number): GameState 
   return s;
 }
 
-/** 响应交换：接受则双方各随机抽走对方一张 */
+/** 响应交换：接受则进入选牌阶段，双方各从对方手牌中暗选一张 */
 export function doRespond(prev: GameState, accept: boolean): GameState {
   const s = structuredClone(prev);
   if (!s.pending) return s;
@@ -171,18 +178,45 @@ export function doRespond(prev: GameState, accept: boolean): GameState {
   const pt = s.players[to];
   s.pending = null;
   if (accept) {
-    const fromCard = pf.hand.splice(randomIndex(pf.hand.length), 1)[0];
-    const toCard = pt.hand.splice(randomIndex(pt.hand.length), 1)[0];
-    pf.hand.push(toCard);
-    pt.hand.push(fromCard);
-    pf.requestsUsed += 1;
-    pf.hasActed = true;
-    s.log.push(`${pt.name} 接受了交换，双方各随机抽走对方一张牌（${pf.name} 已发起 ${pf.requestsUsed}/2 次）`);
-  } else {
-    pf.refusedMe.push(to);
-    s.log.push(`${pt.name} 拒绝了 ${pf.name} 的交换请求`);
+    s.picking = { from, to, fromPick: null, toPick: null };
+    s.log.push(`${pt.name} 接受了交换，双方各从对方手牌中暗选一张`);
+    return s;
   }
+  pf.refusedMe.push(to);
+  s.log.push(`${pt.name} 拒绝了 ${pf.name} 的交换请求`);
   return afterAction(s, from);
+}
+
+/** 选牌阶段中当前应选牌的玩家（先 from 后 to），选完为 null */
+export function currentPicker(s: GameState): number | null {
+  if (!s.picking) return null;
+  if (s.picking.fromPick === null) return s.picking.from;
+  if (s.picking.toPick === null) return s.picking.to;
+  return null;
+}
+
+/** picker 从对方手牌中暗选一张；双方都选定后互换 */
+export function doPick(prev: GameState, picker: number, cardId: string): GameState {
+  const s = structuredClone(prev);
+  const pk = s.picking;
+  if (!pk || currentPicker(s) !== picker) return s;
+  const other = s.players[picker === pk.from ? pk.to : pk.from];
+  if (!other.hand.some((c) => c.id === cardId)) return s;
+  if (picker === pk.from) pk.fromPick = cardId;
+  else pk.toPick = cardId;
+  if (pk.fromPick === null || pk.toPick === null) return s;
+
+  const pf = s.players[pk.from];
+  const pt = s.players[pk.to];
+  const cardFromTo = pt.hand.splice(pt.hand.findIndex((c) => c.id === pk.fromPick), 1)[0];
+  const cardFromFrom = pf.hand.splice(pf.hand.findIndex((c) => c.id === pk.toPick), 1)[0];
+  pf.hand.push(cardFromTo);
+  pt.hand.push(cardFromFrom);
+  pf.requestsUsed += 1;
+  pf.hasActed = true;
+  s.picking = null;
+  s.log.push(`${pf.name} 与 ${pt.name} 互换了一张牌（${pf.name} 已发起 ${pf.requestsUsed}/2 次）`);
+  return afterAction(s, pk.from);
 }
 
 export function doPass(prev: GameState, pid: number): GameState {

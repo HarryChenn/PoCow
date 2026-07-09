@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createGame, doDeckSwap, doPass, doRequest, doRespond, GameState, startRound } from '../game';
-import { aiChooseAction, aiRespond } from '../ai';
+import {
+  createGame,
+  currentPicker,
+  doDeckSwap,
+  doPass,
+  doPick,
+  doRequest,
+  doRespond,
+  GameState,
+  startRound,
+} from '../game';
+import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../ai';
 
 /** 全 AI 自动打完一局（用 AI 策略驱动所有人，包括“人类”位） */
 function playRound(state: GameState): GameState {
@@ -8,6 +18,11 @@ function playRound(state: GameState): GameState {
   let guard = 0;
   while (s.phase === 'exchange') {
     if (++guard > 500) throw new Error('换牌阶段未收敛');
+    if (s.picking) {
+      const picker = currentPicker(s)!;
+      s = doPick(s, picker, aiPickFromOpponent(s, picker));
+      continue;
+    }
     if (s.pending) {
       s = doRespond(s, aiRespond(s, s.pending.to));
       continue;
@@ -51,6 +66,34 @@ describe('整局流程', () => {
     const before = JSON.stringify(s);
     const after = doRequest(s, actor, (actor + 1) % 3);
     expect(JSON.stringify(after)).toBe(before);
+  });
+
+  it('接受交换后双方各暗选对方一张，指定的两张牌互换', () => {
+    let s = createGame(['你', 'A', 'B'], 0);
+    const from = s.turn;
+    const to = (from + 1) % 3;
+    s = doRequest(s, from, to);
+    s = doRespond(s, true);
+    expect(s.picking).toEqual({ from, to, fromPick: null, toPick: null });
+    expect(currentPicker(s)).toBe(from);
+
+    const wantFromTo = s.players[to].hand[2].id; // from 选中 to 的第 3 张
+    const wantFromFrom = s.players[from].hand[4].id; // to 选中 from 的第 5 张
+
+    // 未轮到 to 选牌、或选了不属于对方的牌，都应被忽略
+    expect(doPick(s, to, wantFromFrom).picking).toEqual(s.picking);
+    expect(doPick(s, from, s.players[from].hand[0].id).picking).toEqual(s.picking);
+
+    s = doPick(s, from, wantFromTo);
+    expect(currentPicker(s)).toBe(to);
+    s = doPick(s, to, wantFromFrom);
+
+    expect(s.picking).toBeNull();
+    expect(s.players[from].hand.map((c) => c.id)).toContain(wantFromTo);
+    expect(s.players[to].hand.map((c) => c.id)).toContain(wantFromFrom);
+    expect(s.players[from].hand).toHaveLength(5);
+    expect(s.players[to].hand).toHaveLength(5);
+    expect(s.players[from].requestsUsed).toBe(1);
   });
 
   it('发起交换上限 2 次；被拒绝不消耗次数但不能再找同一人', () => {

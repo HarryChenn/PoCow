@@ -41,6 +41,13 @@ export function aiChooseAction(s: GameState, pid: number): AiAction {
   return { type: 'pass' };
 }
 
+/** AI 选牌阶段：从对方手牌中随机暗选一张（AI 看不到牌面，等价随机） */
+export function aiPickFromOpponent(s: GameState, pickerId: number): string {
+  const pk = s.picking!;
+  const other = s.players[pickerId === pk.from ? pk.to : pk.from];
+  return other.hand[Math.floor(Math.random() * other.hand.length)].id;
+}
+
 /** 是否接受别人发来的交换请求：手牌越差越愿意换 */
 export function aiRespond(s: GameState, pid: number): boolean {
   const ev = evaluateHand(s.players[pid].hand);
