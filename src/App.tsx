@@ -153,7 +153,6 @@ export default function App() {
           >
             开 局
           </button>
-          <div className="setup-badges">底牌定倍数 · 踢脚定基数 · 同花顺 68×</div>
         </div>
       </div>
     );
