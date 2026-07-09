@@ -328,7 +328,7 @@ export default function App() {
         <div className="human-info">
           <span className="seat-name">{human.name}（分数 {fmt(human.score)}）</span>
           <span className="hand-hint">
-            当前牌型：{humanEval.label} · 牌力 {humanEval.detail}
+            当前牌型：{humanEval.label} · {humanEval.detail}
           </span>
         </div>
         <div className="human-cards">

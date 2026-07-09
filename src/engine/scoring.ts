@@ -128,8 +128,8 @@ export function evaluateHand(cards: Card[]): HandEval {
     const baseText = specials.length > 1 ? `(${specials.map((s) => s.base).join('+')})` : `${baseSum}`;
     const detail =
       bonus.mult > 1
-        ? `${baseText} × ${bonus.mult}（${bonus.tags.join('·')}）= ${payout}×`
-        : `${baseText}× = ${payout}×`;
+        ? `牌力 ${baseText} × 倍率 ${bonus.mult}（${bonus.tags.join('·')}）= ${payout} 分`
+        : `牌力 ${baseText} = ${payout} 分`;
     return {
       kind: 'special',
       power: 100 + maxBase,
@@ -158,14 +158,16 @@ export function evaluateHand(cards: Card[]): HandEval {
   }
 
   if (best) {
-    const multText =
-      best.bonus.mult > 1 ? ` × ${best.bonus.mult}（${best.bonus.tags.join('·')}）` : '';
+    const detail =
+      best.bonus.mult > 1
+        ? `牌力 ${best.kicker.base} × 倍率 ${best.bonus.mult}（${best.bonus.tags.join('·')}）= ${best.payout} 分`
+        : `牌力 ${best.kicker.base} = ${best.payout} 分`;
     return {
       kind: 'niu',
       power: best.kicker.base,
       payout: best.payout,
       label: best.kicker.tag,
-      detail: `${best.kicker.base}${multText} = ${best.payout}×`,
+      detail,
       split: best.split,
       specials: [],
     };
@@ -176,7 +178,7 @@ export function evaluateHand(cards: Card[]): HandEval {
     power: 0,
     payout: 1,
     label: '无牛',
-    detail: '1×',
+    detail: '牌力 0（若胜按 1 分结算）',
     split: null,
     specials: [],
   };
