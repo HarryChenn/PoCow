@@ -32,7 +32,12 @@ export function CardView({ card, hidden, small, selectable, picked, dataId, onCl
   if (isJoker(card)) color = 'card-joker';
   else if (card.suit === 'H' || card.suit === 'D') color = 'card-red';
   return (
-    <div className={[...cls, color].join(' ')} data-card-id={dataId} onClick={onClick}>
+    <div
+      className={[...cls, color].join(' ')}
+      data-card-id={dataId}
+      data-rank={isJoker(card) ? undefined : rankLabel(card.rank)}
+      onClick={onClick}
+    >
       {isJoker(card) ? (
         <>
           <span className="card-rank">🃏</span>

@@ -15,10 +15,20 @@ import {
 } from './engine/game';
 import { aiChooseAction, aiPickFromOpponent, aiRespond } from './engine/ai';
 import { evaluateHand } from './engine/scoring';
+import { Card } from './engine/cards';
 import { CardView } from './ui/CardView';
 import { ShowdownPanel } from './ui/ShowdownPanel';
 
 const AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
+
+/** 开屏装饰：一手 10-J-Q-K-Joker */
+const TITLE_CARDS: Card[] = [
+  { id: 'title-10', rank: 10, suit: 'H' },
+  { id: 'title-j', rank: 11, suit: 'S' },
+  { id: 'title-q', rank: 12, suit: 'D' },
+  { id: 'title-k', rank: 13, suit: 'C' },
+  { id: 'title-joker', rank: 14, suit: null },
+];
 const HUMAN_ID = 0;
 const AI_DELAY = 900;
 const FLIGHT_MS = 750;
@@ -113,26 +123,38 @@ export default function App() {
   if (!game) {
     return (
       <div className="setup-screen">
-        <h1>德牛 3+2</h1>
-        <p className="subtitle">PoCow · 底牌定倍数，踢脚定基数</p>
-        <div className="setup-row">
-          <span>AI 对手数量：</span>
-          {[2, 3, 4, 5, 6, 7].map((n) => (
-            <button
-              key={n}
-              className={`btn ${aiCount === n ? 'btn-primary' : ''}`}
-              onClick={() => setAiCount(n)}
-            >
-              {n}
-            </button>
+        <div className="title-cards">
+          {TITLE_CARDS.map((c, i) => (
+            <div key={c.id} className="title-card" style={{ '--i': i } as CSSProperties}>
+              <CardView card={c} />
+            </div>
           ))}
         </div>
-        <button
-          className="btn btn-primary btn-large"
-          onClick={() => setGame(createGame(['你', ...AI_NAMES.slice(0, aiCount)], HUMAN_ID))}
-        >
-          开始游戏（{aiCount + 1} 人局）
-        </button>
+        <h1 className="game-title">PoCow</h1>
+        <div className="game-subtitle">德 牛</div>
+        <div className="setup-panel">
+          <div className="setup-row">
+            <span className="setup-label">AI 对手</span>
+            <div className="count-chips">
+              {[2, 3, 4, 5, 6, 7].map((n) => (
+                <button
+                  key={n}
+                  className={`chip-btn ${aiCount === n ? 'chip-on' : ''}`}
+                  onClick={() => setAiCount(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            className="btn btn-play"
+            onClick={() => setGame(createGame(['你', ...AI_NAMES.slice(0, aiCount)], HUMAN_ID))}
+          >
+            开 局
+          </button>
+          <div className="setup-badges">底牌定倍数 · 踢脚定基数 · 同花顺 68×</div>
+        </div>
       </div>
     );
   }
@@ -164,6 +186,9 @@ export default function App() {
   return (
     <div className="table-screen">
       <header className="table-header">
+        <span className="brand">
+          PoCow <em>德牛</em>
+        </span>
         <span className="round-tag">第 {game.round} 局</span>
         <span className="phase-tag">{phaseText()}</span>
       </header>
