@@ -479,3 +479,93 @@ h1 {
   justify-content: center;
   margin-top: 18px;
 }
+
+/* ---------- 手机适配 ---------- */
+@media (max-width: 700px) {
+  .table-screen {
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    gap: 10px;
+  }
+
+  h1 {
+    font-size: 2.2rem;
+  }
+
+  .setup-row {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .opponents-row {
+    gap: 8px;
+  }
+
+  .seat {
+    min-width: 128px;
+    padding: 6px 8px;
+  }
+
+  .seat .card,
+  .seat .card-sm {
+    width: 30px;
+    height: 44px;
+  }
+
+  .card {
+    width: 52px;
+    height: 74px;
+  }
+
+  .card-rank {
+    font-size: 18px;
+  }
+
+  .human-cards {
+    gap: 6px;
+  }
+
+  .human-area {
+    padding: 10px 12px;
+  }
+
+  .log-panel {
+    max-height: 110px;
+    min-height: 70px;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  .showdown-panel {
+    min-width: 0;
+    width: 96vw;
+    padding: 14px 10px;
+  }
+
+  .showdown-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .showdown-name {
+    width: auto;
+  }
+
+  .showdown-cards .card-sm {
+    width: 32px;
+    height: 46px;
+  }
+
+  .showdown-eval {
+    min-width: 120px;
+  }
+
+  .showdown-score {
+    width: auto;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+}
