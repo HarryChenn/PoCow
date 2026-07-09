@@ -316,7 +316,6 @@ body::after {
   font-size: 12px;
   font-weight: 800;
   font-family: var(--display-font);
-  transform: rotate(180deg);
   opacity: 0.75;
   line-height: 1;
 }
