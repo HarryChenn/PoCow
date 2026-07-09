@@ -276,7 +276,7 @@ export default function App() {
             )}
             {mode === 'discard' && (
               <>
-                <span className="mode-hint">点击你要弃掉的牌（换后本局不能再与对手换牌）</span>
+                <span className="mode-hint">点击你要弃掉的牌（换后本局退出与对手的换牌，别人也不能再找你换）</span>
                 <button className="btn" onClick={() => setMode('idle')}>
                   取消
                 </button>

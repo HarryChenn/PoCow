@@ -7,6 +7,7 @@ import {
   doPick,
   doRequest,
   doRespond,
+  eligibleTargets,
   GameState,
   startRound,
 } from '../game';
@@ -55,17 +56,19 @@ describe('整局流程', () => {
     }
   });
 
-  it('牌堆换牌后不能再发起对手交换', () => {
+  it('牌堆换牌后：自己不能再发起，别人也不能再找他换', () => {
     let s = createGame(['你', 'A', 'B'], 0);
     const cardId = s.players[s.turn].hand[0].id;
     const actor = s.turn;
+    const other = (actor + 1) % 3;
     s = doDeckSwap(s, actor, cardId);
     expect(s.players[actor].usedDeckSwap).toBe(true);
     expect(s.players[actor].passed).toBe(true); // 无可用操作，自动结束
-    // 强行发起应被拒绝（状态不变）
-    const before = JSON.stringify(s);
-    const after = doRequest(s, actor, (actor + 1) % 3);
-    expect(JSON.stringify(after)).toBe(before);
+    // 自己强行发起应被拒绝（状态不变）
+    expect(doRequest(s, actor, other).pending).toBeNull();
+    // 别人也不能指定他为交换对象
+    expect(eligibleTargets(s, other)).not.toContain(actor);
+    expect(doRequest(s, other, actor).pending).toBeNull();
   });
 
   it('接受交换后双方各暗选对方一张，指定的两张牌互换', () => {

@@ -108,7 +108,7 @@ export function eligibleTargets(s: GameState, pid: number): number[] {
   const p = s.players[pid];
   if (p.usedDeckSwap || p.requestsUsed >= 2) return [];
   return s.players
-    .filter((o) => o.id !== pid && !p.refusedMe.includes(o.id))
+    .filter((o) => o.id !== pid && !o.usedDeckSwap && !p.refusedMe.includes(o.id))
     .map((o) => o.id);
 }
 
@@ -156,7 +156,7 @@ export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameSt
   p.hand.push(s.deck.shift() as Card);
   p.usedDeckSwap = true;
   p.hasActed = true;
-  s.log.push(`${p.name} 与牌堆换了一张牌（本局不能再与对手换牌）`);
+  s.log.push(`${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`);
   return afterAction(s, pid);
 }
 
