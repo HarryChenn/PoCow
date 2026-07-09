@@ -246,6 +246,6 @@ function showdown(s: GameState): GameState {
   s.phase = 'showdown';
   const winnerNames = winners.map((w) => s.players[w].name).join('、');
   const label = entries[winners[0]].eval.label;
-  s.log.push(`本局 ${winnerNames} 获胜（${label}），赔率 ${payout}×，每位输家赔 ${payout} 分`);
+  s.log.push(`本局 ${winnerNames} 获胜（${label}），牌力 ${payout}×，每位输家赔 ${payout} 分`);
   return s;
 }

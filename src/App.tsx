@@ -18,6 +18,7 @@ import { evaluateHand } from './engine/scoring';
 import { Card } from './engine/cards';
 import { CardView } from './ui/CardView';
 import { ShowdownPanel } from './ui/ShowdownPanel';
+import { RulesModal } from './ui/RulesModal';
 
 const AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
 const HUMAN_ID = 0;
@@ -69,6 +70,7 @@ export default function App() {
   const [flights, setFlights] = useState<Flight[]>([]);
   const [floats, setFloats] = useState<FloatItem[]>([]);
   const [banner, setBanner] = useState<string | null>(null);
+  const [showRules, setShowRules] = useState(false);
 
   const flying = flights.length > 0;
 
@@ -212,7 +214,11 @@ export default function App() {
           >
             开 局
           </button>
+          <button className="btn" onClick={() => setShowRules(true)}>
+            查看规则
+          </button>
         </div>
+        {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       </div>
     );
   }
@@ -249,6 +255,9 @@ export default function App() {
         </span>
         <span className="round-tag">第 {game.round} 局</span>
         <span className="phase-tag">{phaseText()}</span>
+        <button className="btn header-rules" onClick={() => setShowRules(true)}>
+          规则
+        </button>
       </header>
 
       <div className="opponents-row">
@@ -319,7 +328,7 @@ export default function App() {
         <div className="human-info">
           <span className="seat-name">{human.name}（分数 {fmt(human.score)}）</span>
           <span className="hand-hint">
-            当前牌力：{humanEval.label} · 赔率 {humanEval.detail}
+            当前牌型：{humanEval.label} · 牌力 {humanEval.detail}
           </span>
         </div>
         <div className="human-cards">
@@ -448,6 +457,8 @@ export default function App() {
           }
         />
       ))}
+
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {game.phase === 'showdown' && game.result && (
         <ShowdownPanel

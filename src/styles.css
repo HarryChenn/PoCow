@@ -783,6 +783,96 @@ body::after {
   margin-top: 18px;
 }
 
+/* ---------- 规则弹窗 ---------- */
+.header-rules {
+  margin-left: auto;
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+.rules-panel {
+  max-width: 580px;
+  width: 92vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  font-size: 14px;
+  padding: 18px 24px;
+  animation: panel-pop 0.35s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+}
+
+.rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.rules-head h2 {
+  font-family: var(--display-font);
+  font-size: 20px;
+  margin: 0;
+  letter-spacing: 1px;
+}
+
+.rules-close {
+  padding: 4px 12px;
+  font-size: 14px;
+}
+
+.rules-body {
+  overflow-y: auto;
+  padding-right: 6px;
+  line-height: 1.7;
+}
+
+.rules-body h3 {
+  font-family: var(--display-font);
+  color: var(--gold);
+  font-size: 16px;
+  margin: 16px 0 6px;
+}
+
+.rules-body h4 {
+  font-size: 14px;
+  margin: 12px 0 6px;
+  opacity: 0.95;
+}
+
+.rules-body p {
+  margin: 6px 0;
+  opacity: 0.9;
+}
+
+.rules-body b {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.rules-note {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rules-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rules-table td:last-child {
+  text-align: right;
+  color: var(--gold);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* ---------- 摊牌 ---------- */
 .showdown-overlay {
   animation: fade-in 0.35s ease both;
