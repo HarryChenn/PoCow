@@ -157,14 +157,6 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         case 'refuse':
           addFloat(e.seat, '❌ 拒绝');
           break;
-        case 'swap': {
-          if (e.seat !== myId && e.seat2 !== myId && e.seat2 !== undefined) {
-            const a = seatPoint(e.seat);
-            const b = seatPoint(e.seat2);
-            if (a && b) flyCards(a, b);
-          }
-          break;
-        }
         case 'pass':
           addFloat(e.seat, '✋ 结束换牌');
           break;
@@ -187,19 +179,29 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     }
   };
 
-  const pickCard = (index: number, cardId: string) => {
+  const pickCard = (index: number) => {
     if (busy || !pk) return;
-    const otherPick = myId === pk.from ? pk.toPick : pk.fromPick;
-    if (otherPick) {
-      const a = cardRect(cardId);
-      const b = cardRect(otherPick);
-      if (a && b) {
-        flyThenAct(a, b, { k: 'pick', index });
-        return;
-      }
-    }
     onAction({ k: 'pick', index });
   };
+
+  // 双方都选定 → 亮牌窗口：两张被选中的牌互飞（实际互换由驱动方在窗口结束时提交）
+  const revealAnimated = useRef(false);
+  useEffect(() => {
+    const bothPicked = !!pk && pk.fromPick !== null && pk.toPick !== null;
+    if (!bothPicked) {
+      revealAnimated.current = false;
+      return;
+    }
+    if (revealAnimated.current) return;
+    revealAnimated.current = true;
+    const t = setTimeout(() => {
+      const a = cardRect(pk!.fromPick!);
+      const b = cardRect(pk!.toPick!);
+      if (a && b) flyCards(a, b);
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pk?.fromPick, pk?.toPick]);
 
   const isPicked = (cardId: string) => !!pk && (cardId === pk.fromPick || cardId === pk.toPick);
 
@@ -213,7 +215,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   const phaseText = () => {
     if (state.phase !== 'exchange') return '摊牌';
     if (busy) return '交换中…';
-    if (pk && pickerNow !== null) {
+    if (pk) {
+      if (pickerNow === null) return '双方已选定，正在交换…';
       return `${state.players[pickerNow].name} 正在暗选 ${state.players[pickSourceId!].name} 的一张牌…`;
     }
     if (state.pending) return `等待 ${state.players[state.pending.to].name} 响应交换…`;
@@ -250,7 +253,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   className="seat-swap-btn"
                   onClick={() => onAction({ k: 'request', to: p.id })}
                 >
-                  🤝 换牌
+                  🤝 换牌{(me.swapsWith[p.id] ?? 0) > 0 ? '（剩1次）' : ''}
                 </button>
               )}
               <div className="seat-name">
@@ -276,14 +279,16 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                     picked={isPicked(c.id)}
                     selectable={pickHere}
                     onClick={() => {
-                      if (pickHere) pickCard(i, c.id);
+                      if (pickHere) pickCard(i);
                     }}
                   />
                 ))}
               </div>
               <div className="seat-status">
                 {p.usedDeckSwap && <span className="chip">已换牌堆</span>}
-                {p.requestsUsed > 0 && <span className="chip">已换 {p.requestsUsed}/2</span>}
+                {(p.swapsWith[myId] ?? 0) > 0 && (
+                  <span className="chip">与你已换 {p.swapsWith[myId]}/2</span>
+                )}
                 {p.passed && <span className="chip chip-done">已结束</span>}
               </div>
             </div>
@@ -370,7 +375,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                 </button>
                 {canRequest(state, myId) && (
                   <span className="bar-hint">
-                    点对手座位上的 🤝 可发起换牌（{me.requestsUsed}/2）
+                    点对手座位上的 🤝 可发起换牌（同一对玩家最多互换 2 次）
                   </span>
                 )}
               </>

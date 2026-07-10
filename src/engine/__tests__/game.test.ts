@@ -5,6 +5,7 @@ import {
   doDeckSwap,
   doPass,
   doPick,
+  doPickCommit,
   doRequest,
   doRespond,
   eligibleTargets,
@@ -20,7 +21,11 @@ function playRound(state: GameState): GameState {
   while (s.phase === 'exchange') {
     if (++guard > 500) throw new Error('换牌阶段未收敛');
     if (s.picking) {
-      const picker = currentPicker(s)!;
+      const picker = currentPicker(s);
+      if (picker === null) {
+        s = doPickCommit(s);
+        continue;
+      }
       s = doPick(s, picker, aiPickFromOpponent(s, picker));
       continue;
     }
@@ -91,22 +96,51 @@ describe('整局流程', () => {
     expect(currentPicker(s)).toBe(to);
     s = doPick(s, to, wantFromFrom);
 
+    // 双方选定后进入亮牌窗口：尚未互换，双选可见
+    expect(s.picking).toEqual({ from, to, fromPick: wantFromTo, toPick: wantFromFrom });
+    expect(s.players[to].hand.map((c) => c.id)).toContain(wantFromTo);
+
+    s = doPickCommit(s);
     expect(s.picking).toBeNull();
     expect(s.players[from].hand.map((c) => c.id)).toContain(wantFromTo);
     expect(s.players[to].hand.map((c) => c.id)).toContain(wantFromFrom);
     expect(s.players[from].hand).toHaveLength(5);
     expect(s.players[to].hand).toHaveLength(5);
-    expect(s.players[from].requestsUsed).toBe(1);
+    expect(s.players[from].swapsWith[to]).toBe(1);
+    expect(s.players[to].swapsWith[from]).toBe(1);
   });
 
-  it('发起交换上限 2 次；被拒绝不消耗次数但不能再找同一人', () => {
+  it('同一对玩家之间最多互换 2 次（不论谁发起），与第三人不受影响', () => {
+    let s = createGame(['你', 'A', 'B'], [0]);
+    const a = s.turn;
+    const b = (a + 1) % 3;
+    const c = (a + 2) % 3;
+    const doSwap = (from: number, to: number) => {
+      s = doRequest(s, from, to);
+      s = doRespond(s, true);
+      s = doPick(s, from, s.players[to].hand[0].id);
+      s = doPick(s, to, s.players[from].hand[0].id);
+      s = doPickCommit(s);
+    };
+    doSwap(a, b);
+    expect(s.players[a].swapsWith[b]).toBe(1);
+    expect(s.players[b].swapsWith[a]).toBe(1);
+    // 反方向发起也计入同一对的次数
+    doSwap(b, a);
+    expect(eligibleTargets(s, a)).not.toContain(b);
+    expect(eligibleTargets(s, b)).not.toContain(a);
+    // 与第三人仍可交换
+    expect(eligibleTargets(s, a)).toContain(c);
+  });
+
+  it('被拒绝不消耗互换次数，但不能再找同一人', () => {
     let s = createGame(['你', 'A', 'B'], [0]);
     const actor = s.turn;
     const target = (actor + 1) % 3;
     s = doRequest(s, actor, target);
     expect(s.pending).toEqual({ from: actor, to: target });
     s = doRespond(s, false);
-    expect(s.players[actor].requestsUsed).toBe(0);
+    expect(s.players[actor].swapsWith[target] ?? 0).toBe(0);
     // 不能再向拒绝过自己的人发起
     const blocked = doRequest(s, actor, target);
     expect(blocked.pending).toBeNull();

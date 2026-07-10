@@ -9,8 +9,8 @@ export interface PlayerState {
   isHuman: boolean;
   hand: Card[];
   score: number;
-  /** 本局已发起对手交换的次数（上限 2） */
-  requestsUsed: number;
+  /** 本局与每个对手已完成的互换次数（每对玩家之间上限 2，双方对称计数） */
+  swapsWith: Record<number, number>;
   /** 本局是否已与牌堆换牌（换后本局退出与对手的换牌，双向） */
   usedDeckSwap: boolean;
   /** 本局是否已做过任何主动动作（牌堆换牌仅限局开始、未行动时） */
@@ -91,7 +91,7 @@ export function createGame(names: string[], humanSeats: number[]): GameState {
     isHuman: humanSeats.includes(i),
     hand: [],
     score: 0,
-    requestsUsed: 0,
+    swapsWith: {},
     usedDeckSwap: false,
     hasActed: false,
     passed: false,
@@ -118,7 +118,7 @@ export function startRound(prev: GameState): GameState {
   s.deck = shuffle(makeDeck());
   for (const p of s.players) {
     p.hand = s.deck.splice(0, 5);
-    p.requestsUsed = 0;
+    p.swapsWith = {};
     p.usedDeckSwap = false;
     p.hasActed = false;
     p.passed = false;
@@ -143,9 +143,15 @@ export function canDeckSwap(s: GameStateLike, pid: number): boolean {
 
 export function eligibleTargets(s: GameStateLike, pid: number): number[] {
   const p = s.players[pid];
-  if (p.usedDeckSwap || p.requestsUsed >= 2) return [];
+  if (p.usedDeckSwap) return [];
   return s.players
-    .filter((o) => o.id !== pid && !o.usedDeckSwap && !p.refusedMe.includes(o.id))
+    .filter(
+      (o) =>
+        o.id !== pid &&
+        !o.usedDeckSwap &&
+        (p.swapsWith[o.id] ?? 0) < 2 &&
+        !p.refusedMe.includes(o.id),
+    )
     .map((o) => o.id);
 }
 
@@ -249,7 +255,10 @@ export function doRespond(prev: GameState, accept: boolean): GameState {
   return afterAction(s, from);
 }
 
-/** picker 从对方手牌中暗选一张；双方都选定后互换 */
+/**
+ * picker 从对方手牌中暗选一张。双方都选定后进入「亮牌」窗口（picking 保留、
+ * 两张被选中的牌对双方可见），由驱动方稍后调用 doPickCommit 真正互换。
+ */
 export function doPick(prev: GameState, picker: number, cardId: string): GameState {
   const s = structuredClone(prev);
   const pk = s.picking;
@@ -258,7 +267,14 @@ export function doPick(prev: GameState, picker: number, cardId: string): GameSta
   if (!other.hand.some((c) => c.id === cardId)) return s;
   if (picker === pk.from) pk.fromPick = cardId;
   else pk.toPick = cardId;
-  if (pk.fromPick === null || pk.toPick === null) return s;
+  return s;
+}
+
+/** 亮牌窗口结束后执行互换（房主/单机驱动调用，客户端只等广播） */
+export function doPickCommit(prev: GameState): GameState {
+  const s = structuredClone(prev);
+  const pk = s.picking;
+  if (!pk || pk.fromPick === null || pk.toPick === null) return s;
 
   const pf = s.players[pk.from];
   const pt = s.players[pk.to];
@@ -266,11 +282,13 @@ export function doPick(prev: GameState, picker: number, cardId: string): GameSta
   const cardFromFrom = pf.hand.splice(pf.hand.findIndex((c) => c.id === pk.toPick), 1)[0];
   pf.hand.push(cardFromTo);
   pt.hand.push(cardFromFrom);
-  pf.requestsUsed += 1;
+  const count = (pf.swapsWith[pk.to] ?? 0) + 1;
+  pf.swapsWith[pk.to] = count;
+  pt.swapsWith[pk.from] = count;
   pf.hasActed = true;
   s.picking = null;
   pushLog(s, {
-    text: `${pf.name} 与 ${pt.name} 互换了一张牌（${pf.name} 已发起 ${pf.requestsUsed}/2 次）`,
+    text: `${pf.name} 与 ${pt.name} 互换了一张牌（双方已互换 ${count}/2 次）`,
     kind: 'swap',
     seat: pk.from,
     seat2: pk.to,

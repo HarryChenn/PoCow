@@ -4,6 +4,7 @@ import {
   doDeckSwap,
   doPass,
   doPick,
+  doPickCommit,
   doRequest,
   doRespond,
   GameState,
@@ -12,6 +13,8 @@ import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../engine/ai';
 
 const AI_DELAY = 600;
 const PICK_DELAY = 350;
+/** 双方选定后的亮牌窗口：高亮 + 飞牌动画播完再互换 */
+const REVEAL_DELAY = 1000;
 
 /**
  * AI 驱动循环：为所有非真人座位自动行动（响应请求 / 选牌 / 出招）。
@@ -26,7 +29,12 @@ export function useAiDriver(
 
     if (state.picking) {
       const picker = currentPicker(state);
-      if (picker === null || state.players[picker].isHuman) return;
+      if (picker === null) {
+        // 双方都已选定：亮牌片刻后执行互换
+        const t = setTimeout(() => apply(doPickCommit), REVEAL_DELAY);
+        return () => clearTimeout(t);
+      }
+      if (state.players[picker].isHuman) return;
       const t = setTimeout(
         () =>
           apply((g) =>
