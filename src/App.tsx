@@ -22,8 +22,9 @@ import { RulesModal } from './ui/RulesModal';
 
 const AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
 const HUMAN_ID = 0;
-const AI_DELAY = 900;
-const FLIGHT_MS = 750;
+const AI_DELAY = 600;
+const PICK_DELAY = 350;
+const FLIGHT_MS = 600;
 
 /** 开屏装饰：一手 10-J-Q-K-Joker */
 const TITLE_CARDS: Card[] = [
@@ -34,7 +35,7 @@ const TITLE_CARDS: Card[] = [
   { id: 'title-joker', rank: 14, suit: null },
 ];
 
-type Mode = 'idle' | 'discard' | 'target';
+type Mode = 'idle' | 'discard';
 
 interface Flight {
   key: string;
@@ -146,7 +147,7 @@ export default function App() {
     if (game.picking) {
       const picker = currentPicker(game);
       if (picker === null || game.players[picker].isHuman) return;
-      const t = setTimeout(() => applyPick(picker, aiPickFromOpponent(game, picker)), AI_DELAY);
+      const t = setTimeout(() => applyPick(picker, aiPickFromOpponent(game, picker)), PICK_DELAY);
       return () => clearTimeout(t);
     }
 
@@ -247,6 +248,14 @@ export default function App() {
 
   const isPicked = (cardId: string) => !!pk && (cardId === pk.fromPick || cardId === pk.toPick);
 
+  /** 正在“思考”的 AI（用于座位上的跳动省略号） */
+  const thinkingId = (() => {
+    if (game.phase !== 'exchange' || flying) return null;
+    if (pk) return pickerNow !== null && !game.players[pickerNow].isHuman ? pickerNow : null;
+    if (game.pending) return game.players[game.pending.to].isHuman ? null : game.pending.to;
+    return game.players[game.turn].isHuman ? null : game.turn;
+  })();
+
   return (
     <div className="table-screen">
       <header className="table-header">
@@ -262,7 +271,7 @@ export default function App() {
 
       <div className="opponents-row">
         {opponents.map((p) => {
-          const targetClickable = mode === 'target' && targets.includes(p.id) && isHumanTurn;
+          const swappable = isHumanTurn && mode === 'idle' && targets.includes(p.id);
           const pickHere = humanPicking && pickSourceId === p.id;
           const active =
             game.phase === 'exchange' && !pk && !game.pending && game.turn === p.id;
@@ -270,12 +279,29 @@ export default function App() {
             <div
               key={p.id}
               data-seat-id={p.id}
-              className={`seat ${active ? 'seat-active' : ''} ${targetClickable ? 'seat-clickable' : ''} ${pickHere ? 'seat-picking' : ''}`}
-              onClick={() => {
-                if (targetClickable) act((g) => doRequest(g, HUMAN_ID, p.id));
-              }}
+              className={`seat ${active ? 'seat-active' : ''} ${pickHere ? 'seat-picking' : ''}`}
             >
-              <div className="seat-name">{p.name}</div>
+              {swappable && (
+                <button
+                  className="seat-swap-btn"
+                  onClick={() => {
+                    addFloat(HUMAN_ID, '🤝 求交换');
+                    act((g) => doRequest(g, HUMAN_ID, p.id));
+                  }}
+                >
+                  🤝 换牌
+                </button>
+              )}
+              <div className="seat-name">
+                {p.name}
+                {thinkingId === p.id && (
+                  <span className="think-dots">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                )}
+              </div>
               <div className="seat-score">分数 {fmt(p.score)}</div>
               <div className="seat-cards">
                 {p.hand.map((c) => (
@@ -304,7 +330,17 @@ export default function App() {
       </div>
 
       <div className="mid-row">
-        <div className="deck-pile" data-deck="true">
+        <div
+          className={`deck-pile ${mode === 'discard' ? 'deck-active' : ''} ${
+            isHumanTurn && canDeckSwap(game, HUMAN_ID) ? 'deck-clickable' : ''
+          }`}
+          data-deck="true"
+          onClick={() => {
+            if (isHumanTurn && canDeckSwap(game, HUMAN_ID)) {
+              setMode(mode === 'discard' ? 'idle' : 'discard');
+            }
+          }}
+        >
           <div className="deck-stack">
             <div className="card card-sm card-back" />
             <div className="card card-sm card-back" />
@@ -366,13 +402,6 @@ export default function App() {
                   与牌堆换一张
                 </button>
                 <button
-                  className="btn"
-                  disabled={!canRequest(game, HUMAN_ID)}
-                  onClick={() => setMode('target')}
-                >
-                  找对手换牌（{human.requestsUsed}/2）
-                </button>
-                <button
                   className="btn btn-primary"
                   onClick={() => {
                     addFloat(HUMAN_ID, '✋ 结束换牌');
@@ -381,19 +410,16 @@ export default function App() {
                 >
                   结束换牌
                 </button>
+                {canRequest(game, HUMAN_ID) && (
+                  <span className="bar-hint">
+                    点对手座位上的 🤝 可发起换牌（{human.requestsUsed}/2）
+                  </span>
+                )}
               </>
             )}
             {mode === 'discard' && (
               <>
-                <span className="mode-hint">点击你要弃掉的牌（换后本局退出与对手的换牌，别人也不能再找你换）</span>
-                <button className="btn" onClick={() => setMode('idle')}>
-                  取消
-                </button>
-              </>
-            )}
-            {mode === 'target' && (
-              <>
-                <span className="mode-hint">点击一名对手发起交换（对方可拒绝）</span>
+                <span className="mode-hint">点击你要弃掉的牌 · 换后本局退出与对手的换牌</span>
                 <button className="btn" onClick={() => setMode('idle')}>
                   取消
                 </button>
