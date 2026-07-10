@@ -1,12 +1,15 @@
 import { CSSProperties } from 'react';
 import { Card } from '../engine/cards';
-import { GameState } from '../engine/game';
+import { GameStateLike } from '../engine/game';
 import { CardView } from './CardView';
 
 interface Props {
-  game: GameState;
+  state: GameStateLike;
+  myId: number;
+  canNextRound: boolean;
   onNextRound: () => void;
-  onRestart: () => void;
+  exitLabel: string;
+  onExit: () => void;
 }
 
 /** 摊牌节奏：逐家亮牌，每家内部逐张翻牌，最后揭晓赢家 */
@@ -33,16 +36,16 @@ function FlipCard({ card, delay }: { card: Card; delay: number }) {
   );
 }
 
-export function ShowdownPanel({ game, onNextRound, onRestart }: Props) {
-  const result = game.result!;
-  const winDelay = BASE + game.players.length * ROW_STEP + 0.25;
+export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabel, onExit }: Props) {
+  const result = state.result!;
+  const winDelay = BASE + state.players.length * ROW_STEP + 0.25;
 
   return (
     <div className="showdown-overlay">
       <div className="showdown-panel">
-        <h2>第 {game.round} 局 · 摊牌</h2>
+        <h2>第 {state.round} 局 · 摊牌</h2>
         <div className="showdown-rows">
-          {game.players.map((p, idx) => {
+          {state.players.map((p, idx) => {
             const ev = result.evals[p.id];
             const isWinner = result.winners.includes(p.id);
             const delta = result.deltas[p.id];
@@ -66,6 +69,7 @@ export function ShowdownPanel({ game, onNextRound, onRestart }: Props) {
                     </span>
                   )}
                   {p.name}
+                  {p.id === myId ? '（你）' : ''}
                 </div>
                 <div className="showdown-cards">
                   {ev.split ? (
@@ -113,11 +117,15 @@ export function ShowdownPanel({ game, onNextRound, onRestart }: Props) {
           })}
         </div>
         <div className="showdown-actions pop-in" style={{ animationDelay: `${winDelay + 0.4}s` }}>
-          <button className="btn btn-primary" onClick={onNextRound}>
-            下一局
-          </button>
-          <button className="btn" onClick={onRestart}>
-            重新开始
+          {canNextRound ? (
+            <button className="btn btn-primary" onClick={onNextRound}>
+              下一局
+            </button>
+          ) : (
+            <span className="waiting-host">等待房主开始下一局…</span>
+          )}
+          <button className="btn" onClick={onExit}>
+            {exitLabel}
           </button>
         </div>
       </div>

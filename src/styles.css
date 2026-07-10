@@ -271,6 +271,185 @@ body::after {
     0 3px 6px rgba(0, 0, 0, 0.45);
 }
 
+.text-input {
+  font-family: var(--display-font);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  width: 160px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.text-input:focus {
+  border-color: var(--gold);
+}
+
+.code-input {
+  width: 120px;
+  text-align: center;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+}
+
+.setup-sep {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display-font);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--gold);
+  opacity: 0.9;
+  margin-top: 4px;
+}
+
+.setup-sep::before,
+.setup-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-create {
+  letter-spacing: 6px;
+  text-indent: 6px;
+  padding: 12px 56px;
+  font-size: 20px;
+}
+
+.btn-ghost {
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--panel-border);
+  opacity: 0.8;
+}
+
+.btn-ghost:active:not(:disabled) {
+  transform: none;
+}
+
+.home-status {
+  color: var(--gold);
+  font-size: 14px;
+  animation: dot-bounce 1s ease-in-out infinite;
+}
+
+.home-error {
+  color: #e57368;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ---------- 大厅 ---------- */
+.lobby-title {
+  font-size: clamp(2.4rem, 8vw, 4rem);
+}
+
+.lobby-panel {
+  width: min(94vw, 460px);
+}
+
+.lobby-code-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lobby-code {
+  font-family: var(--display-font);
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 10px;
+  color: var(--gold);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  user-select: all;
+}
+
+.lobby-hint {
+  font-size: 13px;
+  opacity: 0.75;
+  margin: 0;
+}
+
+.lobby-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lobby-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.lobby-empty {
+  opacity: 0.35;
+}
+
+.lobby-kind {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.lobby-kind-host {
+  background: var(--gold);
+  color: #3a2800;
+}
+
+.lobby-kind-ai {
+  background: rgba(125, 60, 152, 0.55);
+}
+
+.lobby-name {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+}
+
+.lobby-remove {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.lobby-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ai-tag {
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(125, 60, 152, 0.55);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.waiting-host {
+  color: var(--gold);
+  font-size: 14px;
+}
+
 /* ---------- 牌 ---------- */
 .card {
   width: 64px;

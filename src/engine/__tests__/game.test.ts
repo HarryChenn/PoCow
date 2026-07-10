@@ -38,7 +38,7 @@ function playRound(state: GameState): GameState {
 
 describe('整局流程', () => {
   it('多人多局：手牌数守恒、结算零和、分数正确累计', () => {
-    let s = createGame(['你', 'A', 'B', 'C', 'D'], 0);
+    let s = createGame(['你', 'A', 'B', 'C', 'D'], [0]);
     for (let round = 0; round < 20; round++) {
       s = playRound(s);
       expect(s.phase).toBe('showdown');
@@ -57,7 +57,7 @@ describe('整局流程', () => {
   });
 
   it('牌堆换牌后：自己不能再发起，别人也不能再找他换', () => {
-    let s = createGame(['你', 'A', 'B'], 0);
+    let s = createGame(['你', 'A', 'B'], [0]);
     const cardId = s.players[s.turn].hand[0].id;
     const actor = s.turn;
     const other = (actor + 1) % 3;
@@ -72,7 +72,7 @@ describe('整局流程', () => {
   });
 
   it('接受交换后双方各暗选对方一张，指定的两张牌互换', () => {
-    let s = createGame(['你', 'A', 'B'], 0);
+    let s = createGame(['你', 'A', 'B'], [0]);
     const from = s.turn;
     const to = (from + 1) % 3;
     s = doRequest(s, from, to);
@@ -100,7 +100,7 @@ describe('整局流程', () => {
   });
 
   it('发起交换上限 2 次；被拒绝不消耗次数但不能再找同一人', () => {
-    let s = createGame(['你', 'A', 'B'], 0);
+    let s = createGame(['你', 'A', 'B'], [0]);
     const actor = s.turn;
     const target = (actor + 1) % 3;
     s = doRequest(s, actor, target);

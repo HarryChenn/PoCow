@@ -1,501 +1,169 @@
-import { CSSProperties, useEffect, useState } from 'react';
-import {
-  canDeckSwap,
-  canRequest,
-  createGame,
-  currentPicker,
-  doDeckSwap,
-  doPass,
-  doPick,
-  doRequest,
-  doRespond,
-  eligibleTargets,
-  GameState,
-  startRound,
-} from './engine/game';
-import { aiChooseAction, aiPickFromOpponent, aiRespond } from './engine/ai';
-import { evaluateHand } from './engine/scoring';
-import { Card } from './engine/cards';
-import { CardView } from './ui/CardView';
-import { ShowdownPanel } from './ui/ShowdownPanel';
-import { RulesModal } from './ui/RulesModal';
+import { useRef, useState } from 'react';
+import { createGame, GameState } from './engine/game';
+import { applyAction } from './net/apply';
+import { ClientSession } from './net/client';
+import { HostSession } from './net/host';
+import { GameView, LobbyView } from './net/protocol';
+import { GameTable } from './ui/GameTable';
+import { HomeScreen } from './ui/HomeScreen';
+import { Lobby } from './ui/Lobby';
+import { useAiDriver } from './ui/useAiDriver';
 
-const AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
-const HUMAN_ID = 0;
-const AI_DELAY = 600;
-const PICK_DELAY = 350;
-const FLIGHT_MS = 600;
+const SOLO_AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
 
-/** 开屏装饰：一手 10-J-Q-K-Joker */
-const TITLE_CARDS: Card[] = [
-  { id: 'title-10', rank: 10, suit: 'H' },
-  { id: 'title-j', rank: 11, suit: 'S' },
-  { id: 'title-q', rank: 12, suit: 'D' },
-  { id: 'title-k', rank: 13, suit: 'C' },
-  { id: 'title-joker', rank: 14, suit: null },
-];
-
-type Mode = 'idle' | 'discard';
-
-interface Flight {
-  key: string;
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
-interface FloatItem {
-  key: string;
-  x: number;
-  y: number;
-  text: string;
-}
-
-function fmt(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
-}
-
-function cardRect(cardId: string): DOMRect | null {
-  return document.querySelector(`[data-card-id="${cardId}"]`)?.getBoundingClientRect() ?? null;
-}
-
-function deckRect(): DOMRect | null {
-  return document.querySelector('[data-deck]')?.getBoundingClientRect() ?? null;
-}
+type Mode = 'home' | 'solo' | 'host' | 'client';
 
 export default function App() {
-  const [game, setGame] = useState<GameState | null>(null);
-  const [aiCount, setAiCount] = useState(3);
-  const [mode, setMode] = useState<Mode>('idle');
-  const [flights, setFlights] = useState<Flight[]>([]);
-  const [floats, setFloats] = useState<FloatItem[]>([]);
-  const [banner, setBanner] = useState<string | null>(null);
-  const [showRules, setShowRules] = useState(false);
+  const [mode, setMode] = useState<Mode>('home');
+  const [soloState, setSoloState] = useState<GameState | null>(null);
+  const [hostState, setHostState] = useState<GameState | null>(null);
+  const [lobby, setLobby] = useState<LobbyView | null>(null);
+  const [clientView, setClientView] = useState<GameView | null>(null);
+  const [clientSeat, setClientSeat] = useState(0);
+  const [homeBusy, setHomeBusy] = useState<string | null>(null);
+  const [homeError, setHomeError] = useState<string | null>(null);
+  const hostRef = useRef<HostSession | null>(null);
+  const clientRef = useRef<ClientSession | null>(null);
 
-  const flying = flights.length > 0;
+  // AI 驱动：单机与房主模式（客户端不驱动）
+  useAiDriver(
+    mode === 'solo' ? soloState : mode === 'host' ? hostState : null,
+    (fn) => {
+      if (mode === 'solo') setSoloState((g) => (g ? fn(g) : g));
+      else hostRef.current?.apply(fn);
+    },
+  );
 
-  const act = (fn: (g: GameState) => GameState) => {
-    setGame((g) => (g ? fn(g) : g));
-    setMode('idle');
+  const goHome = () => {
+    hostRef.current?.close();
+    hostRef.current = null;
+    clientRef.current?.leave();
+    clientRef.current = null;
+    setSoloState(null);
+    setHostState(null);
+    setLobby(null);
+    setClientView(null);
+    setHomeBusy(null);
+    setMode('home');
   };
 
-  /** 座位上方的飘字反馈 */
-  const addFloat = (seatId: number, text: string) => {
-    const el = document.querySelector(`[data-seat-id="${seatId}"]`);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const key = `float-${Date.now()}-${Math.random()}`;
-    setFloats((f) => [...f, { key, x: r.left + r.width / 2, y: r.top + 6, text }]);
-    setTimeout(() => setFloats((f) => f.filter((i) => i.key !== key)), 1200);
+  const startSolo = (name: string, aiCount: number) => {
+    setHomeError(null);
+    setSoloState(createGame([name, ...SOLO_AI_NAMES.slice(0, aiCount)], [0]));
+    setMode('solo');
   };
 
-  /** 两张牌背互飞，动画结束后提交状态变更 */
-  const flyBetween = (a: DOMRect, b: DOMRect, commit: () => void) => {
-    const key = `fly-${Date.now()}`;
-    setFlights([
-      { key: `${key}-a`, x0: a.left, y0: a.top, x1: b.left, y1: b.top },
-      { key: `${key}-b`, x0: b.left, y0: b.top, x1: a.left, y1: a.top },
-    ]);
-    setTimeout(() => {
-      setFlights([]);
-      commit();
-    }, FLIGHT_MS);
+  const createRoom = (name: string) => {
+    setHomeError(null);
+    setHomeBusy('正在创建房间…');
+    hostRef.current = new HostSession(name, {
+      onOpen: () => {
+        setHomeBusy(null);
+        setMode('host');
+      },
+      onLobby: setLobby,
+      onState: setHostState,
+      onError: (msg) => {
+        hostRef.current = null;
+        setHomeBusy(null);
+        setHomeError(msg);
+        setMode('home');
+      },
+    });
   };
 
-  /** 与牌堆换牌：手牌与牌堆互飞后提交 */
-  const deckSwapAnimated = (pid: number, cardId: string) => {
-    if (flying) return;
-    setMode('idle');
-    addFloat(pid, '🃏 换牌堆');
-    const a = cardRect(cardId);
-    const b = deckRect();
-    if (a && b) flyBetween(a, b, () => act((g) => doDeckSwap(g, pid, cardId)));
-    else act((g) => doDeckSwap(g, pid, cardId));
+  const joinRoom = (name: string, code: string) => {
+    setHomeError(null);
+    setHomeBusy('正在加入房间…');
+    clientRef.current = new ClientSession(code, name, {
+      onLobby: (lb) => {
+        setHomeBusy(null);
+        setLobby(lb);
+        setMode('client');
+      },
+      onState: (seat, view) => {
+        setHomeBusy(null);
+        setClientSeat(seat);
+        setClientView(view);
+        setMode('client');
+      },
+      onClosed: (msg) => {
+        clientRef.current = null;
+        setLobby(null);
+        setClientView(null);
+        setHomeBusy(null);
+        setHomeError(msg);
+        setMode('home');
+      },
+    });
   };
 
-  /** 提交一次选牌；若这是第二张（双方都已选定），先播放两张牌互飞的动画再提交 */
-  const applyPick = (picker: number, cardId: string) => {
-    if (!game?.picking || flying) return;
-    const pk = game.picking;
-    const otherPick = picker === pk.from ? pk.toPick : pk.fromPick;
-    if (otherPick) {
-      const a = cardRect(cardId);
-      const b = cardRect(otherPick);
-      if (a && b) {
-        flyBetween(a, b, () => act((g) => doPick(g, picker, cardId)));
-        return;
-      }
-    }
-    act((g) => doPick(g, picker, cardId));
-  };
-
-  // 回合开始横幅
-  useEffect(() => {
-    if (!game || game.phase !== 'exchange') return;
-    const p = game.players[game.turn];
-    setBanner(p.isHuman ? '轮到你了！' : `轮到 ${p.name}`);
-    const t = setTimeout(() => setBanner(null), 1200);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game?.turn, game?.round, game?.phase]);
-
-  // AI 自动行动（响应请求 / 选牌 / 出招）
-  useEffect(() => {
-    if (!game || game.phase !== 'exchange' || flying) return;
-
-    if (game.picking) {
-      const picker = currentPicker(game);
-      if (picker === null || game.players[picker].isHuman) return;
-      const t = setTimeout(() => applyPick(picker, aiPickFromOpponent(game, picker)), PICK_DELAY);
-      return () => clearTimeout(t);
-    }
-
-    if (game.pending) {
-      const responder = game.pending.to;
-      if (game.players[responder].isHuman) return;
-      const t = setTimeout(() => {
-        const accepted = aiRespond(game, responder);
-        addFloat(responder, accepted ? '🤝 接受' : '❌ 拒绝');
-        act((g) => (g.pending ? doRespond(g, accepted) : g));
-      }, AI_DELAY);
-      return () => clearTimeout(t);
-    }
-
-    if (game.players[game.turn].isHuman) return;
-    const t = setTimeout(() => {
-      const pid = game.turn;
-      const action = aiChooseAction(game, pid);
-      if (action.type === 'deckSwap') {
-        deckSwapAnimated(pid, action.cardId);
-        return;
-      }
-      if (action.type === 'request') {
-        addFloat(pid, '🤝 求交换');
-        act((g) => doRequest(g, pid, action.to));
-        return;
-      }
-      addFloat(pid, '✋ 结束换牌');
-      act((g) => doPass(g, pid));
-    }, AI_DELAY);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, flying]);
-
-  if (!game) {
+  if (mode === 'solo' && soloState) {
     return (
-      <div className="setup-screen">
-        <div className="title-cards">
-          {TITLE_CARDS.map((c, i) => (
-            <div key={c.id} className="title-card" style={{ '--i': i } as CSSProperties}>
-              <CardView card={c} />
-            </div>
-          ))}
-        </div>
-        <h1 className="game-title">PoCow</h1>
-        <div className="game-subtitle">德 牛</div>
-        <div className="setup-panel">
-          <div className="setup-row">
-            <span className="setup-label">AI 对手</span>
-            <div className="count-chips">
-              {[2, 3, 4, 5, 6, 7].map((n) => (
-                <button
-                  key={n}
-                  className={`chip-btn ${aiCount === n ? 'chip-on' : ''}`}
-                  onClick={() => setAiCount(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button
-            className="btn btn-play"
-            onClick={() => setGame(createGame(['你', ...AI_NAMES.slice(0, aiCount)], HUMAN_ID))}
-          >
-            开 局
-          </button>
-          <button className="btn" onClick={() => setShowRules(true)}>
-            查看规则
-          </button>
-        </div>
-        {showRules && <RulesModal onClose={() => setShowRules(false)} />}
-      </div>
+      <GameTable
+        state={soloState}
+        myId={0}
+        onAction={(a) => setSoloState((g) => (g ? applyAction(g, 0, a) : g))}
+        canNextRound
+        exitLabel="返回首页"
+        onExit={goHome}
+      />
     );
   }
 
-  const human = game.players[HUMAN_ID];
-  const opponents = game.players.filter((p) => !p.isHuman);
-  const pk = game.picking;
-  const pickerNow = currentPicker(game);
-  const pickSourceId = pk && pickerNow !== null ? (pickerNow === pk.from ? pk.to : pk.from) : null;
-  const humanPicking = pickerNow === HUMAN_ID && !flying;
-  const isHumanTurn =
-    game.phase === 'exchange' && game.turn === HUMAN_ID && !game.pending && !pk && !flying;
-  const pendingToHuman = game.pending && game.pending.to === HUMAN_ID;
-  const humanEval = evaluateHand(human.hand);
-  const targets = eligibleTargets(game, HUMAN_ID);
-
-  const phaseText = () => {
-    if (game.phase !== 'exchange') return '摊牌';
-    if (flying) return '交换中…';
-    if (pk && pickerNow !== null) {
-      return `${game.players[pickerNow].name} 正在暗选 ${game.players[pickSourceId!].name} 的一张牌…`;
+  if (mode === 'host') {
+    if (hostState) {
+      return (
+        <GameTable
+          state={hostState}
+          myId={0}
+          onAction={(a) => hostRef.current?.apply((g) => applyAction(g, 0, a))}
+          canNextRound
+          exitLabel="解散房间"
+          onExit={goHome}
+        />
+      );
     }
-    if (game.pending) return `等待 ${game.players[game.pending.to].name} 响应交换…`;
-    return `轮到 ${game.players[game.turn].name} 行动`;
-  };
+    if (lobby) {
+      return (
+        <Lobby
+          lobby={lobby}
+          isHost
+          onAddAi={() => hostRef.current?.addAi()}
+          onRemoveAi={(i) => hostRef.current?.removeAi(i)}
+          onStart={() => hostRef.current?.startGame()}
+          onLeave={goHome}
+          leaveLabel="解散房间"
+        />
+      );
+    }
+  }
 
-  const isPicked = (cardId: string) => !!pk && (cardId === pk.fromPick || cardId === pk.toPick);
-
-  /** 正在“思考”的 AI（用于座位上的跳动省略号） */
-  const thinkingId = (() => {
-    if (game.phase !== 'exchange' || flying) return null;
-    if (pk) return pickerNow !== null && !game.players[pickerNow].isHuman ? pickerNow : null;
-    if (game.pending) return game.players[game.pending.to].isHuman ? null : game.pending.to;
-    return game.players[game.turn].isHuman ? null : game.turn;
-  })();
+  if (mode === 'client') {
+    if (clientView) {
+      return (
+        <GameTable
+          state={clientView}
+          myId={clientSeat}
+          onAction={(a) => clientRef.current?.send(a)}
+          canNextRound={false}
+          exitLabel="退出房间"
+          onExit={goHome}
+        />
+      );
+    }
+    if (lobby) {
+      return <Lobby lobby={lobby} isHost={false} onLeave={goHome} leaveLabel="退出房间" />;
+    }
+  }
 
   return (
-    <div className="table-screen">
-      <header className="table-header">
-        <span className="brand">
-          PoCow <em>德牛</em>
-        </span>
-        <span className="round-tag">第 {game.round} 局</span>
-        <span className="phase-tag">{phaseText()}</span>
-        <button className="btn header-rules" onClick={() => setShowRules(true)}>
-          规则
-        </button>
-      </header>
-
-      <div className="opponents-row">
-        {opponents.map((p) => {
-          const swappable = isHumanTurn && mode === 'idle' && targets.includes(p.id);
-          const pickHere = humanPicking && pickSourceId === p.id;
-          const active =
-            game.phase === 'exchange' && !pk && !game.pending && game.turn === p.id;
-          return (
-            <div
-              key={p.id}
-              data-seat-id={p.id}
-              className={`seat ${active ? 'seat-active' : ''} ${pickHere ? 'seat-picking' : ''}`}
-            >
-              {swappable && (
-                <button
-                  className="seat-swap-btn"
-                  onClick={() => {
-                    addFloat(HUMAN_ID, '🤝 求交换');
-                    act((g) => doRequest(g, HUMAN_ID, p.id));
-                  }}
-                >
-                  🤝 换牌
-                </button>
-              )}
-              <div className="seat-name">
-                {p.name}
-                {thinkingId === p.id && (
-                  <span className="think-dots">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                )}
-              </div>
-              <div className="seat-score">分数 {fmt(p.score)}</div>
-              <div className="seat-cards">
-                {p.hand.map((c) => (
-                  <CardView
-                    key={c.id}
-                    card={c}
-                    hidden
-                    small
-                    dataId={c.id}
-                    picked={isPicked(c.id)}
-                    selectable={pickHere}
-                    onClick={() => {
-                      if (pickHere) applyPick(HUMAN_ID, c.id);
-                    }}
-                  />
-                ))}
-              </div>
-              <div className="seat-status">
-                {p.usedDeckSwap && <span className="chip">已换牌堆</span>}
-                {p.requestsUsed > 0 && <span className="chip">已换 {p.requestsUsed}/2</span>}
-                {p.passed && <span className="chip chip-done">已结束</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mid-row">
-        <div
-          className={`deck-pile ${mode === 'discard' ? 'deck-active' : ''} ${
-            isHumanTurn && canDeckSwap(game, HUMAN_ID) ? 'deck-clickable' : ''
-          }`}
-          data-deck="true"
-          onClick={() => {
-            if (isHumanTurn && canDeckSwap(game, HUMAN_ID)) {
-              setMode(mode === 'discard' ? 'idle' : 'discard');
-            }
-          }}
-        >
-          <div className="deck-stack">
-            <div className="card card-sm card-back" />
-            <div className="card card-sm card-back" />
-            <div className="card card-sm card-back" />
-          </div>
-          <span className="deck-count">牌堆 {game.deck.length}</span>
-        </div>
-        <div className="log-panel">
-          {game.log.slice(-6).map((line, i) => (
-            <div key={i} className="log-line">
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div
-        className={`human-area ${isHumanTurn || humanPicking ? 'area-turn' : ''}`}
-        data-seat-id={HUMAN_ID}
-      >
-        <div className="human-info">
-          <span className="seat-name">{human.name}（分数 {fmt(human.score)}）</span>
-          <span className="hand-hint">
-            当前牌型：{humanEval.label} · {humanEval.detail}
-          </span>
-        </div>
-        <div className="human-cards">
-          {human.hand.map((c) => (
-            <CardView
-              key={c.id}
-              card={c}
-              dataId={c.id}
-              picked={isPicked(c.id)}
-              selectable={mode === 'discard' && isHumanTurn}
-              onClick={() => {
-                if (mode === 'discard' && isHumanTurn) deckSwapAnimated(HUMAN_ID, c.id);
-              }}
-            />
-          ))}
-        </div>
-
-        {humanPicking && (
-          <div className="action-bar">
-            <span className="mode-hint">
-              点击 {game.players[pickSourceId!].name} 的一张暗牌，选走它
-            </span>
-          </div>
-        )}
-
-        {isHumanTurn && (
-          <div className="action-bar">
-            {mode === 'idle' && (
-              <>
-                <button
-                  className="btn"
-                  disabled={!canDeckSwap(game, HUMAN_ID)}
-                  onClick={() => setMode('discard')}
-                >
-                  与牌堆换一张
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    addFloat(HUMAN_ID, '✋ 结束换牌');
-                    act((g) => doPass(g, HUMAN_ID));
-                  }}
-                >
-                  结束换牌
-                </button>
-                {canRequest(game, HUMAN_ID) && (
-                  <span className="bar-hint">
-                    点对手座位上的 🤝 可发起换牌（{human.requestsUsed}/2）
-                  </span>
-                )}
-              </>
-            )}
-            {mode === 'discard' && (
-              <>
-                <span className="mode-hint">点击你要弃掉的牌 · 换后本局退出与对手的换牌</span>
-                <button className="btn" onClick={() => setMode('idle')}>
-                  取消
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {pendingToHuman && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <p>
-              {game.players[game.pending!.from].name} 想与你交换手牌
-              <br />
-              <small>（若接受，双方各从对方手牌中暗选一张互换）</small>
-            </p>
-            <div className="modal-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  addFloat(HUMAN_ID, '🤝 接受');
-                  act((g) => doRespond(g, true));
-                }}
-              >
-                接受
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  addFloat(HUMAN_ID, '❌ 拒绝');
-                  act((g) => doRespond(g, false));
-                }}
-              >
-                拒绝
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {banner && game.phase === 'exchange' && <div className="turn-banner">{banner}</div>}
-
-      {floats.map((f) => (
-        <div key={f.key} className="float-text" style={{ left: f.x, top: f.y }}>
-          {f.text}
-        </div>
-      ))}
-
-      {flights.map((f) => (
-        <div
-          key={f.key}
-          className="flight-card"
-          style={
-            {
-              '--x0': `${f.x0}px`,
-              '--y0': `${f.y0}px`,
-              '--x1': `${f.x1}px`,
-              '--y1': `${f.y1}px`,
-            } as CSSProperties
-          }
-        />
-      ))}
-
-      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
-
-      {game.phase === 'showdown' && game.result && (
-        <ShowdownPanel
-          game={game}
-          onNextRound={() => act(startRound)}
-          onRestart={() => {
-            setGame(null);
-            setMode('idle');
-          }}
-        />
-      )}
-    </div>
+    <HomeScreen
+      onSolo={startSolo}
+      onCreate={createRoom}
+      onJoin={joinRoom}
+      busy={homeBusy}
+      error={homeError}
+    />
   );
 }

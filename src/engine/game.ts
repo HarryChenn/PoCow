@@ -5,12 +5,13 @@ import { compareHands } from './compare';
 export interface PlayerState {
   id: number;
   name: string;
+  /** 是否由真人控制（掉线转 AI 时置 false） */
   isHuman: boolean;
   hand: Card[];
   score: number;
   /** 本局已发起对手交换的次数（上限 2） */
   requestsUsed: number;
-  /** 本局是否已与牌堆换牌（换后不能再与对手换） */
+  /** 本局是否已与牌堆换牌（换后本局退出与对手的换牌，双向） */
   usedDeckSwap: boolean;
   /** 本局是否已做过任何主动动作（牌堆换牌仅限局开始、未行动时） */
   hasActed: boolean;
@@ -32,6 +33,30 @@ export interface PickingState {
   toPick: string | null;
 }
 
+export type LogKind =
+  | 'round'
+  | 'deckSwap'
+  | 'request'
+  | 'accept'
+  | 'refuse'
+  | 'swap'
+  | 'pass'
+  | 'win'
+  | 'takeover';
+
+/** 结构化日志：kind/seat 供 UI 触发飘字、飞牌等动效；id 自增，视图裁剪后仍可检测新事件 */
+export interface LogEntry {
+  id: number;
+  text: string;
+  kind?: LogKind;
+  seat?: number;
+  seat2?: number;
+}
+
+function pushLog(s: GameState, entry: Omit<LogEntry, 'id'>): void {
+  s.log.push({ id: s.logSeq++, ...entry });
+}
+
 export interface RoundResult {
   evals: HandEval[];
   winners: number[];
@@ -47,15 +72,23 @@ export interface GameState {
   turn: number;
   pending: PendingRequest | null;
   picking: PickingState | null;
-  log: string[];
+  log: LogEntry[];
+  logSeq: number;
   result: RoundResult | null;
 }
 
-export function createGame(names: string[], humanIndex: number): GameState {
+/** GameState 与客户端脱敏视图（deck → deckCount）的公共形状，判定函数两者通用 */
+export type GameStateLike = Omit<GameState, 'deck'> & { deck?: Card[]; deckCount?: number };
+
+export function deckSize(s: GameStateLike): number {
+  return s.deck ? s.deck.length : (s.deckCount ?? 0);
+}
+
+export function createGame(names: string[], humanSeats: number[]): GameState {
   const players: PlayerState[] = names.map((name, i) => ({
     id: i,
     name,
-    isHuman: i === humanIndex,
+    isHuman: humanSeats.includes(i),
     hand: [],
     score: 0,
     requestsUsed: 0,
@@ -73,6 +106,7 @@ export function createGame(names: string[], humanIndex: number): GameState {
     pending: null,
     picking: null,
     log: [],
+    logSeq: 0,
     result: null,
   };
   return startRound(state);
@@ -95,16 +129,19 @@ export function startRound(prev: GameState): GameState {
   s.picking = null;
   s.result = null;
   s.turn = (s.round - 1) % s.players.length;
-  s.log.push(`—— 第 ${s.round} 局开始，${s.players[s.turn].name} 先行动 ——`);
+  pushLog(s, {
+    text: `—— 第 ${s.round} 局开始，${s.players[s.turn].name} 先行动 ——`,
+    kind: 'round',
+  });
   return s;
 }
 
-export function canDeckSwap(s: GameState, pid: number): boolean {
+export function canDeckSwap(s: GameStateLike, pid: number): boolean {
   const p = s.players[pid];
-  return !p.passed && !p.hasActed && s.deck.length > 0;
+  return !p.passed && !p.hasActed && deckSize(s) > 0;
 }
 
-export function eligibleTargets(s: GameState, pid: number): number[] {
+export function eligibleTargets(s: GameStateLike, pid: number): number[] {
   const p = s.players[pid];
   if (p.usedDeckSwap || p.requestsUsed >= 2) return [];
   return s.players
@@ -112,12 +149,20 @@ export function eligibleTargets(s: GameState, pid: number): number[] {
     .map((o) => o.id);
 }
 
-export function canRequest(s: GameState, pid: number): boolean {
+export function canRequest(s: GameStateLike, pid: number): boolean {
   return !s.players[pid].passed && eligibleTargets(s, pid).length > 0;
 }
 
-export function hasMoves(s: GameState, pid: number): boolean {
+export function hasMoves(s: GameStateLike, pid: number): boolean {
   return canDeckSwap(s, pid) || canRequest(s, pid);
+}
+
+/** 选牌阶段中当前应选牌的玩家（先 from 后 to），选完为 null */
+export function currentPicker(s: GameStateLike): number | null {
+  if (!s.picking) return null;
+  if (s.picking.fromPick === null) return s.picking.from;
+  if (s.picking.toPick === null) return s.picking.to;
+  return null;
 }
 
 function advanceTurn(s: GameState, from: number): GameState {
@@ -145,7 +190,7 @@ function afterAction(s: GameState, pid: number): GameState {
   return s;
 }
 
-/** 与牌堆换牌：弃指定一张，从牌堆摸一张。仅限本局尚未行动时；换后本局不能再与对手换 */
+/** 与牌堆换牌：弃指定一张，从牌堆摸一张。仅限本局尚未行动时；换后本局退出与对手的换牌 */
 export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameState {
   const s = structuredClone(prev);
   const p = s.players[pid];
@@ -156,16 +201,25 @@ export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameSt
   p.hand.push(s.deck.shift() as Card);
   p.usedDeckSwap = true;
   p.hasActed = true;
-  s.log.push(`${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`);
+  pushLog(s, {
+    text: `${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`,
+    kind: 'deckSwap',
+    seat: pid,
+  });
   return afterAction(s, pid);
 }
 
 /** 发起对手交换：对方可拒绝；拒绝不消耗次数，但不能再向同一人发起 */
 export function doRequest(prev: GameState, from: number, to: number): GameState {
   const s = structuredClone(prev);
-  if (s.pending || !eligibleTargets(s, from).includes(to)) return s;
+  if (s.pending || s.picking || !eligibleTargets(s, from).includes(to)) return s;
   s.pending = { from, to };
-  s.log.push(`${s.players[from].name} 请求与 ${s.players[to].name} 交换手牌`);
+  pushLog(s, {
+    text: `${s.players[from].name} 请求与 ${s.players[to].name} 交换手牌`,
+    kind: 'request',
+    seat: from,
+    seat2: to,
+  });
   return s;
 }
 
@@ -179,20 +233,20 @@ export function doRespond(prev: GameState, accept: boolean): GameState {
   s.pending = null;
   if (accept) {
     s.picking = { from, to, fromPick: null, toPick: null };
-    s.log.push(`${pt.name} 接受了交换，双方各从对方手牌中暗选一张`);
+    pushLog(s, {
+      text: `${pt.name} 接受了交换，双方各从对方手牌中暗选一张`,
+      kind: 'accept',
+      seat: to,
+    });
     return s;
   }
   pf.refusedMe.push(to);
-  s.log.push(`${pt.name} 拒绝了 ${pf.name} 的交换请求`);
+  pushLog(s, {
+    text: `${pt.name} 拒绝了 ${pf.name} 的交换请求`,
+    kind: 'refuse',
+    seat: to,
+  });
   return afterAction(s, from);
-}
-
-/** 选牌阶段中当前应选牌的玩家（先 from 后 to），选完为 null */
-export function currentPicker(s: GameState): number | null {
-  if (!s.picking) return null;
-  if (s.picking.fromPick === null) return s.picking.from;
-  if (s.picking.toPick === null) return s.picking.to;
-  return null;
 }
 
 /** picker 从对方手牌中暗选一张；双方都选定后互换 */
@@ -215,15 +269,30 @@ export function doPick(prev: GameState, picker: number, cardId: string): GameSta
   pf.requestsUsed += 1;
   pf.hasActed = true;
   s.picking = null;
-  s.log.push(`${pf.name} 与 ${pt.name} 互换了一张牌（${pf.name} 已发起 ${pf.requestsUsed}/2 次）`);
+  pushLog(s, {
+    text: `${pf.name} 与 ${pt.name} 互换了一张牌（${pf.name} 已发起 ${pf.requestsUsed}/2 次）`,
+    kind: 'swap',
+    seat: pk.from,
+    seat2: pk.to,
+  });
   return afterAction(s, pk.from);
 }
 
 export function doPass(prev: GameState, pid: number): GameState {
   const s = structuredClone(prev);
   s.players[pid].passed = true;
-  s.log.push(`${s.players[pid].name} 结束换牌`);
+  pushLog(s, { text: `${s.players[pid].name} 结束换牌`, kind: 'pass', seat: pid });
   return advanceTurn(s, pid);
+}
+
+/** 掉线：座位转为 AI 控制，牌局继续 */
+export function markSeatAi(prev: GameState, pid: number): GameState {
+  const s = structuredClone(prev);
+  const p = s.players[pid];
+  if (!p.isHuman) return s;
+  p.isHuman = false;
+  pushLog(s, { text: `${p.name} 掉线，由 AI 接管`, kind: 'takeover', seat: pid });
+  return s;
 }
 
 function showdown(s: GameState): GameState {
@@ -246,6 +315,10 @@ function showdown(s: GameState): GameState {
   s.phase = 'showdown';
   const winnerNames = winners.map((w) => s.players[w].name).join('、');
   const label = entries[winners[0]].eval.label;
-  s.log.push(`本局 ${winnerNames} 获胜（${label}），每位输家赔 ${payout} 分`);
+  pushLog(s, {
+    text: `本局 ${winnerNames} 获胜（${label}），每位输家赔 ${payout} 分`,
+    kind: 'win',
+    seat: winners[0],
+  });
   return s;
 }

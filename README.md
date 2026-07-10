@@ -1,6 +1,9 @@
 # PoCow 德牛
 
-自创卡牌游戏「PoCow 德牛」（3+2 玩法）的网页单机版：1 名玩家对战 2–7 个 AI，纯前端，无需服务器。
+自创卡牌游戏「PoCow 德牛」（3+2 玩法）网页版，纯前端、无需服务器：
+
+- **单机模式**：1 名玩家对战 2–7 个 AI
+- **联机模式**：创建房间拿到 5 位房间码发给朋友，3–8 人同桌对战（可加 AI 补位）。基于 WebRTC 点对点（PeerJS），房主浏览器即权威主机；玩家掉线由 AI 接管，房主离开则房间解散
 
 🎮 在线试玩：https://harrychenn.github.io/PoCow/
 
@@ -80,7 +83,13 @@ src/engine/   纯 TypeScript 游戏引擎（与 UI 解耦，全部可单测）
   cards.ts    牌型定义、点数、牌堆
   scoring.ts  底牌倍率、踢脚牌力、特殊胜利、最优拆分
   compare.ts  牌力比较 + 德州扑克平局判定
-  game.ts     发牌 → 换牌 → 摊牌 → 结算 状态机
+  game.ts     发牌 → 换牌 → 摊牌 → 结算 状态机（纯函数）
   ai.ts       AI 启发式决策
-src/ui/       React 组件
+src/net/      联机层（房主权威 P2P）
+  protocol.ts 消息与动作类型
+  view.ts     GameState → 每座位脱敏视图（他人手牌掩码、按索引选牌）
+  apply.ts    动作校验与应用（单机/房主/远端共用，防作弊）
+  host.ts     房主会话：建房、握手、AI 补位、广播、掉线转 AI
+  client.ts   加入者会话
+src/ui/       React 组件（GameTable 牌桌为单机/联机共用）
 ```
