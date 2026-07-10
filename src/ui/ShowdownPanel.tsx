@@ -1,7 +1,8 @@
-import { CSSProperties } from 'react';
+import { CSSProperties, useEffect } from 'react';
 import { Card } from '../engine/cards';
 import { GameStateLike } from '../engine/game';
 import { CardView } from './CardView';
+import { burst, burstGold, shake } from './effects';
 
 interface Props {
   state: GameStateLike;
@@ -39,6 +40,28 @@ function FlipCard({ card, delay }: { card: Card; delay: number }) {
 export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabel, onExit }: Props) {
   const result = state.result!;
   const winDelay = BASE + state.players.length * ROW_STEP + 0.25;
+  const winnerEval = result.evals[result.winners[0]];
+  const isSpecialWin = winnerEval.kind === 'special';
+
+  // 赢家揭晓时刻：震屏 + 皇冠行礼花；特殊胜利额外全屏光辉
+  useEffect(() => {
+    const t = setTimeout(() => {
+      shake('.showdown-panel');
+      document.querySelectorAll('.showdown-row.winner').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        burstGold(r.left + r.width / 2, r.top + r.height / 2, 24);
+        burst(r.left + r.width * 0.2, r.top, { count: 12, spread: 110 });
+        burst(r.left + r.width * 0.8, r.top, { count: 12, spread: 110 });
+      });
+      if (isSpecialWin) {
+        setTimeout(() => {
+          burstGold(window.innerWidth / 2, window.innerHeight / 2, 30);
+        }, 250);
+      }
+    }, winDelay * 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="showdown-overlay">
@@ -116,6 +139,14 @@ export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabe
             );
           })}
         </div>
+        {isSpecialWin && (
+          <div className="slam" style={{ animationDelay: `${winDelay + 0.1}s` }}>
+            <div className="slam-rays" />
+            <span className="slam-text">{winnerEval.label}</span>
+            <span className="slam-payout">{result.payout} 分</span>
+          </div>
+        )}
+
         <div className="showdown-actions pop-in" style={{ animationDelay: `${winDelay + 0.4}s` }}>
           {canNextRound ? (
             <button className="btn btn-primary" onClick={onNextRound}>

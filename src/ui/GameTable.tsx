@@ -12,6 +12,7 @@ import { PlayerAction } from '../net/protocol';
 import { CardView } from './CardView';
 import { ShowdownPanel } from './ShowdownPanel';
 import { RulesModal } from './RulesModal';
+import { burst, burstGold, burstGreen, shake } from './effects';
 
 const FLIGHT_MS = 600;
 const CARD_W = 44;
@@ -30,6 +31,8 @@ interface FloatItem {
   x: number;
   y: number;
   text: string;
+  /** 印章样式（如「拒 绝」）：红框斜盖章，区别于普通飘字 */
+  stamp?: boolean;
 }
 
 interface Point {
@@ -87,13 +90,18 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   const myEval = evaluateHand(me.hand);
   const targets = eligibleTargets(state, myId);
 
-  const addFloat = (seatId: number, text: string) => {
+  const addFloat = (seatId: number, text: string, stamp = false) => {
     const el = document.querySelector(`[data-seat-id="${seatId}"]`);
     if (!el) return;
     const r = el.getBoundingClientRect();
     const key = `float-${Date.now()}-${Math.random()}`;
-    setFloats((f) => [...f, { key, x: r.left + r.width / 2, y: r.top + 6, text }]);
+    setFloats((f) => [...f, { key, x: r.left + r.width / 2, y: r.top + 6, text, stamp }]);
     setTimeout(() => setFloats((f) => f.filter((i) => i.key !== key)), 1200);
+  };
+
+  const seatCenter = (seat: number): Point | null => {
+    const r = document.querySelector(`[data-seat-id="${seat}"]`)?.getBoundingClientRect();
+    return r ? { left: r.left + r.width / 2, top: r.top + r.height / 2 } : null;
   };
 
   const flyCards = (a: Point, b: Point, after?: () => void) => {
@@ -146,27 +154,67 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
             const b = deckPoint();
             if (a && b) flyCards(a, b);
           }
+          setTimeout(() => {
+            const d = deckPoint();
+            if (d) burst(d.left + CARD_W / 2, d.top + CARD_H / 2, { count: 10, spread: 60 });
+          }, FLIGHT_MS - 100);
           break;
         }
         case 'request':
           addFloat(e.seat, '🤝 求交换');
           break;
-        case 'accept':
+        case 'accept': {
           addFloat(e.seat, '🤝 接受');
+          const p = seatCenter(e.seat);
+          if (p) burstGreen(p.left, p.top);
           break;
-        case 'refuse':
-          addFloat(e.seat, '❌ 拒绝');
+        }
+        case 'refuse': {
+          addFloat(e.seat, '拒 绝', true);
+          shake();
           break;
+        }
+        case 'swap': {
+          const a = seatCenter(e.seat);
+          const b = e.seat2 !== undefined ? seatCenter(e.seat2) : null;
+          if (a) burstGold(a.left, a.top, 12);
+          if (b) burstGold(b.left, b.top, 12);
+          break;
+        }
         case 'pass':
           addFloat(e.seat, '✋ 结束换牌');
           break;
-        case 'takeover':
+        case 'takeover': {
           addFloat(e.seat, '🔌 AI 接管');
+          const p = seatCenter(e.seat);
+          if (p) burst(p.left, p.top, { symbols: ['⚡', '✦'], colors: ['#9aa7b3', '#d5dde3'], count: 10 });
           break;
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.log]);
+
+  // 手牌变化后的强弱反馈：变强撒金星，变弱掉滴汗
+  const prevHand = useRef<{ round: number; ids: string; power: number } | null>(null);
+  useEffect(() => {
+    const ids = me.hand
+      .map((c) => c.id)
+      .sort()
+      .join(',');
+    const prev = prevHand.current;
+    prevHand.current = { round: state.round, ids, power: myEval.power };
+    if (!prev || prev.round !== state.round || prev.ids === ids) return;
+    if (state.phase !== 'exchange') return;
+    if (myEval.power > prev.power) {
+      addFloat(myId, '✨ 变强了！');
+      const p = seatCenter(myId);
+      if (p) burstGold(p.left, p.top, 20);
+    } else if (myEval.power < prev.power) {
+      addFloat(myId, '💧 变弱了…');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.hand.map((c) => c.id).join(',')]);
 
   const discardCard = (cardId: string) => {
     if (busy) return;
@@ -242,11 +290,12 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
           const pickHere = iAmPicking && pickSourceId === p.id;
           const active =
             state.phase === 'exchange' && !pk && !state.pending && state.turn === p.id;
+          const rippling = state.pending?.to === p.id;
           return (
             <div
               key={p.id}
               data-seat-id={p.id}
-              className={`seat ${active ? 'seat-active' : ''} ${pickHere ? 'seat-picking' : ''}`}
+              className={`seat ${active ? 'seat-active' : ''} ${pickHere ? 'seat-picking' : ''} ${rippling ? 'seat-ripple' : ''}`}
             >
               {swappable && (
                 <button
@@ -338,16 +387,30 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         </div>
         <div className="human-cards">
           {me.hand.map((c) => (
-            <CardView
+            <div
               key={c.id}
-              card={c}
-              dataId={c.id}
-              picked={isPicked(c.id)}
-              selectable={mode === 'discard' && isMyTurn}
-              onClick={() => {
-                if (mode === 'discard' && isMyTurn) discardCard(c.id);
+              className="tilt-wrap"
+              onMouseMove={(e) => {
+                const el = e.currentTarget;
+                const r = el.getBoundingClientRect();
+                const px = (e.clientX - r.left) / r.width - 0.5;
+                const py = (e.clientY - r.top) / r.height - 0.5;
+                el.style.transform = `perspective(600px) rotateY(${px * 18}deg) rotateX(${-py * 18}deg) translateY(-4px)`;
               }}
-            />
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = '';
+              }}
+            >
+              <CardView
+                card={c}
+                dataId={c.id}
+                picked={isPicked(c.id)}
+                selectable={mode === 'discard' && isMyTurn}
+                onClick={() => {
+                  if (mode === 'discard' && isMyTurn) discardCard(c.id);
+                }}
+              />
+            </div>
           ))}
         </div>
 
@@ -415,10 +478,19 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         </div>
       )}
 
-      {banner && state.phase === 'exchange' && <div className="turn-banner">{banner}</div>}
+      {banner && state.phase === 'exchange' && (
+        <>
+          <div className="turn-banner">{banner}</div>
+          {state.turn === myId && <div className="turn-flash" />}
+        </>
+      )}
 
       {floats.map((f) => (
-        <div key={f.key} className="float-text" style={{ left: f.x, top: f.y }}>
+        <div
+          key={f.key}
+          className={f.stamp ? 'float-stamp' : 'float-text'}
+          style={{ left: f.x, top: f.y }}
+        >
           {f.text}
         </div>
       ))}
