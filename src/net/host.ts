@@ -145,8 +145,17 @@ export class HostSession {
     this.pushLobby();
   }
 
-  removeAi(index: number) {
-    if (this.state || this.seats[index]?.kind !== 'ai') return;
+  /** 大厅中移除座位：AI 直接移除；远端玩家通知后踢出 */
+  removeSeat(index: number) {
+    if (this.state) return;
+    const seat = this.seats[index];
+    if (!seat || seat.kind === 'host') return;
+    if (seat.kind === 'remote' && seat.conn) {
+      this.send(seat.conn, { t: 'roomClosed', msg: '你已被房主移出房间' });
+      const conn = seat.conn;
+      seat.conn = undefined; // 防止 close 事件触发 handleDrop 重复处理
+      setTimeout(() => conn.close(), 300);
+    }
     this.seats.splice(index, 1);
     this.pushLobby();
   }

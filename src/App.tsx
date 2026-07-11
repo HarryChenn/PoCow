@@ -130,7 +130,7 @@ export default function App() {
           lobby={lobby}
           isHost
           onAddAi={() => hostRef.current?.addAi()}
-          onRemoveAi={(i) => hostRef.current?.removeAi(i)}
+          onRemove={(i) => hostRef.current?.removeSeat(i)}
           onStart={() => hostRef.current?.startGame()}
           onLeave={goHome}
           leaveLabel="解散房间"

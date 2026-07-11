@@ -5,7 +5,8 @@ interface Props {
   lobby: LobbyView;
   isHost: boolean;
   onAddAi?: () => void;
-  onRemoveAi?: (index: number) => void;
+  /** 移除座位：AI 或踢出远端玩家（仅房主） */
+  onRemove?: (index: number) => void;
   onStart?: () => void;
   onLeave: () => void;
   leaveLabel: string;
@@ -13,7 +14,7 @@ interface Props {
 
 const KIND_LABEL = { host: '房主', remote: '玩家', ai: 'AI' } as const;
 
-export function Lobby({ lobby, isHost, onAddAi, onRemoveAi, onStart, onLeave, leaveLabel }: Props) {
+export function Lobby({ lobby, isHost, onAddAi, onRemove, onStart, onLeave, leaveLabel }: Props) {
   const [copied, setCopied] = useState(false);
 
   const copyCode = async () => {
@@ -47,8 +48,13 @@ export function Lobby({ lobby, isHost, onAddAi, onRemoveAi, onStart, onLeave, le
               <span className="lobby-name">{p.name}</span>
               {!p.connected && <span className="chip">已掉线</span>}
               {isHost && p.kind === 'ai' && (
-                <button className="btn lobby-remove" onClick={() => onRemoveAi?.(i)}>
+                <button className="btn lobby-remove" onClick={() => onRemove?.(i)}>
                   移除
+                </button>
+              )}
+              {isHost && p.kind === 'remote' && (
+                <button className="btn lobby-remove lobby-kick" onClick={() => onRemove?.(i)}>
+                  踢出
                 </button>
               )}
             </div>
