@@ -242,27 +242,6 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.sessions]);
 
-  // 手牌变化后的强弱反馈：变强撒金星，变弱掉滴汗
-  const prevHand = useRef<{ round: number; ids: string; power: number } | null>(null);
-  useEffect(() => {
-    const ids = me.hand
-      .map((c) => c.id)
-      .sort()
-      .join(',');
-    const prev = prevHand.current;
-    prevHand.current = { round: state.round, ids, power: myEval.power };
-    if (!prev || prev.round !== state.round || prev.ids === ids) return;
-    if (state.phase !== 'exchange') return;
-    if (myEval.power > prev.power) {
-      addFloat(myId, '✨ 变强了！');
-      const p = seatCenter(myId);
-      if (p) burstGold(p.left, p.top, 20);
-    } else if (myEval.power < prev.power) {
-      addFloat(myId, '💧 变弱了…');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me.hand.map((c) => c.id).join(',')]);
-
   const discardCard = (cardId: string) => {
     if (busy) return;
     const a = cardRect(cardId);
