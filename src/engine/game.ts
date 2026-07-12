@@ -200,8 +200,8 @@ export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameSt
   if (s.phase !== 'exchange' || !canDeckSwap(s, pid)) return s;
   const idx = p.hand.findIndex((c) => c.id === cardId);
   if (idx < 0) return s;
-  p.hand.splice(idx, 1);
-  p.hand.push(s.deck.shift() as Card);
+  // 摸来的牌放在被弃牌的原位置，保持手牌顺序
+  p.hand[idx] = s.deck.shift() as Card;
   p.usedDeckSwap = true;
   p.hasActed = true;
   pushLog(s, {
@@ -277,10 +277,13 @@ export function doPickCommit(prev: GameState, from: number): GameState {
   const ses = s.sessions[idx];
   const pf = s.players[ses.from];
   const pt = s.players[ses.to];
-  const cardFromTo = pt.hand.splice(pt.hand.findIndex((c) => c.id === ses.fromPick), 1)[0];
-  const cardFromFrom = pf.hand.splice(pf.hand.findIndex((c) => c.id === ses.toPick), 1)[0];
-  pf.hand.push(cardFromTo);
-  pt.hand.push(cardFromFrom);
+  // 换来的牌放在被换走那张的原位置，保持双方手牌顺序
+  const idxInTo = pt.hand.findIndex((c) => c.id === ses.fromPick);
+  const idxInFrom = pf.hand.findIndex((c) => c.id === ses.toPick);
+  const cardFromTo = pt.hand[idxInTo];
+  const cardFromFrom = pf.hand[idxInFrom];
+  pf.hand[idxInFrom] = cardFromTo;
+  pt.hand[idxInTo] = cardFromFrom;
   const count = (pf.swapsWith[ses.to] ?? 0) + 1;
   pf.swapsWith[ses.to] = count;
   pt.swapsWith[ses.from] = count;

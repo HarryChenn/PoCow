@@ -96,9 +96,19 @@ describe('整局流程（自由换牌）', () => {
     expect(s.players[2].swapsWith[3]).toBe(1);
   });
 
-  it('牌堆换牌后：自己不能再发起，别人也不能再找他换', () => {
+  it('牌堆换牌后：自己不能再发起，别人也不能再找他换；新牌在原位置', () => {
     let s = createGame(['你', 'A', 'B'], [0]);
-    s = doDeckSwap(s, 0, s.players[0].hand[0].id);
+    const before = s.players[0].hand.map((c) => c.id);
+    const drawn = s.deck[0].id;
+    s = doDeckSwap(s, 0, before[2]);
+    // 顺序保持：只有第 3 张变成了摸来的牌
+    expect(s.players[0].hand.map((c) => c.id)).toEqual([
+      before[0],
+      before[1],
+      drawn,
+      before[3],
+      before[4],
+    ]);
     expect(s.players[0].usedDeckSwap).toBe(true);
     expect(s.players[0].passed).toBe(true); // 无可用操作，自动结束
     expect(doRequest(s, 0, 1).sessions).toHaveLength(0);
@@ -127,12 +137,17 @@ describe('整局流程（自由换牌）', () => {
     expect(s.sessions[0].fromPick).toBe(wantFromTo);
     expect(s.players[1].hand.map((c) => c.id)).toContain(wantFromTo);
 
+    const fromBefore = s.players[0].hand.map((c) => c.id);
+    const toBefore = s.players[1].hand.map((c) => c.id);
     s = doPickCommit(s, 0);
     expect(s.sessions).toHaveLength(0);
-    expect(s.players[0].hand.map((c) => c.id)).toContain(wantFromTo);
-    expect(s.players[1].hand.map((c) => c.id)).toContain(wantFromFrom);
-    expect(s.players[0].hand).toHaveLength(5);
-    expect(s.players[1].hand).toHaveLength(5);
+    // 换来的牌落在被换走那张的原位置（from 的第 5 张、to 的第 3 张）
+    expect(s.players[0].hand.map((c) => c.id)).toEqual(
+      fromBefore.map((id) => (id === wantFromFrom ? wantFromTo : id)),
+    );
+    expect(s.players[1].hand.map((c) => c.id)).toEqual(
+      toBefore.map((id) => (id === wantFromTo ? wantFromFrom : id)),
+    );
     expect(s.players[0].swapsWith[1]).toBe(1);
     expect(s.players[1].swapsWith[0]).toBe(1);
   });
