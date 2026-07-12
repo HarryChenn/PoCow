@@ -461,10 +461,6 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   else if (mode === 'discard' && iAmFree) discardCard(c.id);
                 }}
               />
-              {state.phase === 'arrange' &&
-                (arranging ? bottomSel : (me.chosenBottom ?? [])).includes(c.id) && (
-                  <span className="bottom-badge">底</span>
-                )}
             </div>
           ))}
         </div>

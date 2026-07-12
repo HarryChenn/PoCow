@@ -602,8 +602,14 @@ body::after {
 
 .card.picked {
   outline: 3px solid #6fd97a;
-  transform: translateY(-6px);
-  box-shadow: 0 0 14px rgba(111, 217, 122, 0.8);
+  transform: translateY(-10px);
+  box-shadow: 0 0 16px rgba(111, 217, 122, 0.9);
+}
+
+/* 选中态必须压过“可选”的金色呼吸动画（动画会覆盖普通声明的 outline 颜色） */
+.card.selectable.picked {
+  animation: none;
+  outline-color: #6fd97a;
 }
 
 /* ---------- 换牌飞行动画 ---------- */
@@ -1146,23 +1152,6 @@ body::after {
   color: #6fd97a;
 }
 
-/* 选中为底牌的角标 */
-.bottom-badge {
-  position: absolute;
-  top: -8px;
-  left: -6px;
-  z-index: 2;
-  font-family: var(--display-font);
-  font-size: 11px;
-  font-weight: 800;
-  background: #6fd97a;
-  color: #0c3818;
-  border-radius: 6px;
-  padding: 1px 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  animation: pop-in 0.25s cubic-bezier(0.34, 1.5, 0.5, 1) both;
-}
 
 /* ---------- 弹窗 ---------- */
 .modal-overlay,
