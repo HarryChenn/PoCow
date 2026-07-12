@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canDeckSwap,
   createGame,
   doArrange,
   doDeckSwap,
@@ -150,6 +151,10 @@ describe('整局流程（自由换牌）', () => {
     );
     expect(s.players[0].swapsWith[1]).toBe(1);
     expect(s.players[1].swapsWith[0]).toBe(1);
+    // 与玩家互换过后，双方都不能再与牌堆换牌
+    expect(canDeckSwap(s, 0)).toBe(false);
+    expect(canDeckSwap(s, 1)).toBe(false);
+    expect(canDeckSwap(s, 2)).toBe(true);
   });
 
   it('同一对玩家之间最多互换 2 次（不论谁发起），与第三人不受影响', () => {

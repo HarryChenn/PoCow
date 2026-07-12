@@ -287,7 +287,9 @@ export function doPickCommit(prev: GameState, from: number): GameState {
   const count = (pf.swapsWith[ses.to] ?? 0) + 1;
   pf.swapsWith[ses.to] = count;
   pt.swapsWith[ses.from] = count;
+  // 与玩家互换过后，双方都不能再与牌堆换牌
   pf.hasActed = true;
+  pt.hasActed = true;
   s.sessions.splice(idx, 1);
   pushLog(s, {
     text: `${pf.name} 与 ${pt.name} 互换了一张牌（双方已互换 ${count}/2 次）`,
