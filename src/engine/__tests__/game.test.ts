@@ -13,13 +13,26 @@ import {
   startRound,
 } from '../game';
 import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../ai';
+import { evaluateHand } from '../scoring';
+import { doArrange } from '../game';
 
 /** 全 AI 自动打完一局（用 AI 策略驱动所有人，包括“人类”位） */
 function playRound(state: GameState): GameState {
   let s = state;
   let guard = 0;
-  while (s.phase === 'exchange') {
-    if (++guard > 500) throw new Error('换牌阶段未收敛');
+  while (s.phase !== 'showdown') {
+    if (++guard > 800) throw new Error('对局未收敛');
+    if (s.phase === 'arrange') {
+      const p = s.players.find((x) => !x.arrangedDone)!;
+      const ev = evaluateHand(p.hand);
+      const bottom = ev.split ? ev.split.bottom : p.hand.slice(0, 3);
+      s = doArrange(
+        s,
+        p.id,
+        bottom.map((c) => c.id),
+      );
+      continue;
+    }
     if (s.picking) {
       const picker = currentPicker(s);
       if (picker === null) {

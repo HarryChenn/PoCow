@@ -27,6 +27,8 @@ export function viewFor(s: GameState, seat: number): GameView {
       ...p,
       hand:
         p.id === seat || reveal ? p.hand : p.hand.map((_, i) => maskCard(p.id, i)),
+      // 他人的拆分选择在摊牌前不可见（含真实牌面 id，也防泄露）
+      chosenBottom: p.id === seat || reveal ? p.chosenBottom : null,
     })),
     deckCount: s.deck.length,
     logSeq: s.logSeq,

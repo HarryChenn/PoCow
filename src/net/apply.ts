@@ -1,5 +1,6 @@
 import {
   currentPicker,
+  doArrange,
   doDeckSwap,
   doPass,
   doPick,
@@ -34,6 +35,8 @@ export function applyAction(g: GameState, seat: number, a: PlayerAction): GameSt
       const cardId = resolvePickIndex(g, holder, a.index);
       return cardId ? doPick(g, seat, cardId) : g;
     }
+    case 'arrange':
+      return doArrange(g, seat, a.bottomIds);
     case 'nextRound':
       return g.phase === 'showdown' ? startRound(g) : g;
   }

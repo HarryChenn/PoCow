@@ -7,7 +7,7 @@ import {
   eligibleTargets,
   GameStateLike,
 } from '../engine/game';
-import { evaluateHand } from '../engine/scoring';
+import { evaluateChosen, evaluateHand } from '../engine/scoring';
 import { PlayerAction } from '../net/protocol';
 import { CardView } from './CardView';
 import { ShowdownPanel } from './ShowdownPanel';
@@ -77,6 +77,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   const [showRules, setShowRules] = useState(false);
   /** 本人动作的飞牌动画进行中：暂锁交互，动画结束后才提交动作 */
   const [busy, setBusy] = useState(false);
+  /** 拆分阶段：当前点选为底牌的 3 张 */
+  const [bottomSel, setBottomSel] = useState<string[]>([]);
 
   const me = state.players[myId];
   const opponents = [...state.players.slice(myId + 1), ...state.players.slice(0, myId)];
@@ -127,15 +129,38 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     });
   };
 
-  // 回合横幅
+  // 回合/阶段横幅
   useEffect(() => {
-    if (state.phase !== 'exchange') return;
-    const p = state.players[state.turn];
-    setBanner(p.id === myId ? '轮到你了！' : `轮到 ${p.name}`);
+    if (state.phase === 'showdown') return;
+    if (state.phase === 'arrange') {
+      setBanner('拆分 3 + 2 ！');
+    } else {
+      const p = state.players[state.turn];
+      setBanner(p.id === myId ? '轮到你了！' : `轮到 ${p.name}`);
+    }
     const t = setTimeout(() => setBanner(null), 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.turn, state.round, state.phase]);
+
+  // 换局/换阶段时清空拆分选择
+  useEffect(() => {
+    setBottomSel([]);
+  }, [state.round, state.phase]);
+
+  const arranging = state.phase === 'arrange' && !me.arrangedDone;
+
+  const toggleBottom = (cardId: string) => {
+    setBottomSel((sel) =>
+      sel.includes(cardId) ? sel.filter((id) => id !== cardId) : sel.length < 3 ? [...sel, cardId] : sel,
+    );
+  };
+
+  const autoArrange = () => {
+    const ev = evaluateHand(me.hand);
+    const bottom = ev.split ? ev.split.bottom : me.hand.slice(0, 3);
+    setBottomSel(bottom.map((c) => c.id));
+  };
 
   // 由结构化日志驱动的飘字与装饰性飞牌（本人的飞牌在交互时已播，跳过）
   const lastLogId = useRef(-1);
@@ -183,6 +208,9 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         }
         case 'pass':
           addFloat(e.seat, '✋ 结束换牌');
+          break;
+        case 'arranged':
+          addFloat(e.seat, '✅ 已拆分');
           break;
         case 'takeover': {
           addFloat(e.seat, '🔌 AI 接管');
@@ -261,7 +289,11 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   })();
 
   const phaseText = () => {
-    if (state.phase !== 'exchange') return '摊牌';
+    if (state.phase === 'showdown') return '摊牌';
+    if (state.phase === 'arrange') {
+      const done = state.players.filter((p) => p.arrangedDone).length;
+      return `拆分阶段（${done}/${state.players.length} 已提交）`;
+    }
     if (busy) return '交换中…';
     if (pk) {
       if (pickerNow === null) return '双方已选定，正在交换…';
@@ -308,7 +340,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               <div className="seat-name">
                 {!p.isHuman && <span className="ai-tag">AI</span>}
                 {p.name}
-                {thinkingId === p.id && (
+                {(thinkingId === p.id ||
+                  (state.phase === 'arrange' && !p.arrangedDone)) && (
                   <span className="think-dots">
                     <i />
                     <i />
@@ -338,7 +371,11 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                 {(p.swapsWith[myId] ?? 0) > 0 && (
                   <span className="chip">与你已换 {p.swapsWith[myId]}/2</span>
                 )}
-                {p.passed && <span className="chip chip-done">已结束</span>}
+                {state.phase === 'arrange' ? (
+                  p.arrangedDone && <span className="chip chip-done">已拆分</span>
+                ) : (
+                  p.passed && <span className="chip chip-done">已结束</span>
+                )}
               </div>
             </div>
           );
@@ -382,7 +419,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
             {me.name}（分数 {fmt(me.score)}）
           </span>
           <span className="hand-hint">
-            当前牌型：{myEval.label} · {myEval.detail}
+            最佳可拆：{myEval.label} · {myEval.detail}
           </span>
         </div>
         <div className="human-cards">
@@ -404,15 +441,52 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               <CardView
                 card={c}
                 dataId={c.id}
-                picked={isPicked(c.id)}
-                selectable={mode === 'discard' && isMyTurn}
+                picked={
+                  isPicked(c.id) ||
+                  (arranging && bottomSel.includes(c.id)) ||
+                  (state.phase === 'arrange' && !!me.chosenBottom?.includes(c.id))
+                }
+                selectable={(mode === 'discard' && isMyTurn) || arranging}
                 onClick={() => {
-                  if (mode === 'discard' && isMyTurn) discardCard(c.id);
+                  if (arranging) toggleBottom(c.id);
+                  else if (mode === 'discard' && isMyTurn) discardCard(c.id);
                 }}
               />
             </div>
           ))}
         </div>
+
+        {state.phase === 'arrange' &&
+          (me.arrangedDone ? (
+            <div className="action-bar">
+              <span className="bar-hint">已提交拆分，等待其他玩家…</span>
+            </div>
+          ) : (
+            <div className="action-bar">
+              <span className="mode-hint">
+                点选 3 张作为底牌（绿框），其余 2 张为踢脚（{bottomSel.length}/3）
+              </span>
+              {bottomSel.length === 3 &&
+                (() => {
+                  const ev = evaluateChosen(me.hand, bottomSel);
+                  return (
+                    <span className="arrange-eval">
+                      {ev.label} · {ev.detail}
+                    </span>
+                  );
+                })()}
+              <button className="btn" onClick={autoArrange}>
+                自动
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={bottomSel.length !== 3}
+                onClick={() => onAction({ k: 'arrange', bottomIds: bottomSel })}
+              >
+                确认拆分
+              </button>
+            </div>
+          ))}
 
         {iAmPicking && pickSourceId !== null && (
           <div className="action-bar">
@@ -478,7 +552,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         </div>
       )}
 
-      {banner && state.phase === 'exchange' && (
+      {banner && state.phase !== 'showdown' && (
         <>
           <div className="turn-banner">{banner}</div>
           {state.turn === myId && <div className="turn-flash" />}

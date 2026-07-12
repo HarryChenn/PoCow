@@ -118,6 +118,49 @@ export interface HandEval {
   specials: SpecialWin[];
 }
 
+function niuDetail(base: number, bonus: BonusEval, payout: number): string {
+  return bonus.mult > 1
+    ? `牌力 ${base} × 倍率 ${bonus.mult}（${bonus.tags.join('·')}）= ${payout} 分`
+    : `牌力 ${base} = ${payout} 分`;
+}
+
+const NONE_EVAL = {
+  kind: 'none' as const,
+  power: 0,
+  payout: 1,
+  label: '无牛',
+  detail: '牌力 0（若胜按 1 分结算）',
+  specials: [] as SpecialWin[],
+};
+
+/**
+ * 按玩家自选的 3 张底牌评牌（拆分阶段的结果）：
+ * - 特殊胜利仍自动生效（整手 5 张性质，与拆分无关）
+ * - 所选底牌凑不成牛就是无牛——即使存在能成牛的其他拆法（手动拆分的博弈点）
+ */
+export function evaluateChosen(cards: Card[], chosenBottom: string[] | null): HandEval {
+  if (evalSpecials(cards).length > 0 || !chosenBottom) return evaluateHand(cards);
+  const bottom = cards.filter((c) => chosenBottom.includes(c.id));
+  const kicker = cards.filter((c) => !chosenBottom.includes(c.id));
+  if (bottom.length !== 3) return evaluateHand(cards);
+
+  if (totalPoints(bottom) % 10 !== 0) {
+    return { ...NONE_EVAL, split: { bottom, kicker } };
+  }
+  const k = evalKicker(kicker);
+  const bonus = bonusOf3(bottom);
+  const payout = k.base * bonus.mult;
+  return {
+    kind: 'niu',
+    power: k.base,
+    payout,
+    label: k.tag,
+    detail: niuDetail(k.base, bonus, payout),
+    split: { bottom, kicker },
+    specials: [],
+  };
+}
+
 export function evaluateHand(cards: Card[]): HandEval {
   const specials = evalSpecials(cards);
   if (specials.length > 0) {
@@ -158,10 +201,7 @@ export function evaluateHand(cards: Card[]): HandEval {
   }
 
   if (best) {
-    const detail =
-      best.bonus.mult > 1
-        ? `牌力 ${best.kicker.base} × 倍率 ${best.bonus.mult}（${best.bonus.tags.join('·')}）= ${best.payout} 分`
-        : `牌力 ${best.kicker.base} = ${best.payout} 分`;
+    const detail = niuDetail(best.kicker.base, best.bonus, best.payout);
     return {
       kind: 'niu',
       power: best.kicker.base,
@@ -173,13 +213,5 @@ export function evaluateHand(cards: Card[]): HandEval {
     };
   }
 
-  return {
-    kind: 'none',
-    power: 0,
-    payout: 1,
-    label: '无牛',
-    detail: '牌力 0（若胜按 1 分结算）',
-    split: null,
-    specials: [],
-  };
+  return { ...NONE_EVAL, split: null };
 }

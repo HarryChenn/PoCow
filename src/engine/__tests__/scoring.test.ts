@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Card, JOKER_RANK, Suit } from '../cards';
-import { bonusOf3, evalKicker, evalSpecials, evaluateHand } from '../scoring';
+import { bonusOf3, evalKicker, evalSpecials, evaluateChosen, evaluateHand } from '../scoring';
 
 let seq = 0;
 function c(rank: number, suit: Suit | null = 'S'): Card {
@@ -131,5 +131,27 @@ describe('普通 3+2 牛牌', () => {
     expect(ev.kind).toBe('none');
     expect(ev.power).toBe(0);
     expect(ev.payout).toBe(1);
+  });
+});
+
+describe('手动拆分 evaluateChosen', () => {
+  it('按所选拆分评牌：拆错则无牛，即使存在能成牛的拆法', () => {
+    const hand = [c(13, 'S'), c(10, 'H'), c(11, 'D'), c(4, 'S'), c(6, 'H')];
+    const good = evaluateChosen(hand, [hand[0].id, hand[1].id, hand[2].id]);
+    expect(good.kind).toBe('niu');
+    expect(good.power).toBe(5); // K+10+J 成牛，踢脚 4+6 牛牛
+
+    const bad = evaluateChosen(hand, [hand[0].id, hand[1].id, hand[3].id]); // K+10+4=24 无牛
+    expect(bad.kind).toBe('none');
+    expect(bad.power).toBe(0);
+    expect(bad.payout).toBe(1);
+    expect(bad.split!.bottom.map((x) => x.id)).toEqual([hand[0].id, hand[1].id, hand[3].id]);
+  });
+
+  it('特殊胜利无视拆分选择', () => {
+    const hand = [c(9, 'S'), c(9, 'H'), c(9, 'D'), c(9, 'C'), c(2, 'S')];
+    const ev = evaluateChosen(hand, [hand[0].id, hand[1].id, hand[4].id]);
+    expect(ev.kind).toBe('special');
+    expect(ev.payout).toBe(36);
   });
 });

@@ -8,6 +8,8 @@ export type PlayerAction =
   | { k: 'respond'; accept: boolean }
   /** 选对方的牌按位置索引（对方手牌是暗的，避免泄露真实牌面 id） */
   | { k: 'pick'; index: number }
+  /** 拆分阶段：提交自选的 3 张底牌（自己的牌，真实 id） */
+  | { k: 'arrange'; bottomIds: string[] }
   | { k: 'nextRound' };
 
 export interface LobbyPlayer {

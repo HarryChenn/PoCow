@@ -1053,6 +1053,17 @@ body::after {
   opacity: 0.75;
 }
 
+.arrange-eval {
+  font-family: var(--display-font);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--gold);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(242, 185, 59, 0.4);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
 /* ---------- 弹窗 ---------- */
 .modal-overlay,
 .showdown-overlay {

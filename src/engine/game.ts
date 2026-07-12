@@ -1,5 +1,5 @@
 import { Card, makeDeck, shuffle } from './cards';
-import { evaluateHand, HandEval } from './scoring';
+import { evalSpecials, evaluateChosen, HandEval } from './scoring';
 import { compareHands } from './compare';
 
 export interface PlayerState {
@@ -18,6 +18,10 @@ export interface PlayerState {
   passed: boolean;
   /** 本局拒绝过我的对手（不能再次向其发起） */
   refusedMe: number[];
+  /** 拆分阶段自选的 3 张底牌 id（特殊胜利/未提交为 null） */
+  chosenBottom: string[] | null;
+  /** 是否已完成拆分（特殊胜利自动视为完成） */
+  arrangedDone: boolean;
 }
 
 export interface PendingRequest {
@@ -41,6 +45,8 @@ export type LogKind =
   | 'refuse'
   | 'swap'
   | 'pass'
+  | 'arrange'
+  | 'arranged'
   | 'win'
   | 'takeover';
 
@@ -68,7 +74,7 @@ export interface GameState {
   players: PlayerState[];
   deck: Card[];
   round: number;
-  phase: 'exchange' | 'showdown';
+  phase: 'exchange' | 'arrange' | 'showdown';
   turn: number;
   pending: PendingRequest | null;
   picking: PickingState | null;
@@ -96,6 +102,8 @@ export function createGame(names: string[], humanSeats: number[]): GameState {
     hasActed: false,
     passed: false,
     refusedMe: [],
+    chosenBottom: null,
+    arrangedDone: false,
   }));
   const state: GameState = {
     players,
@@ -123,6 +131,8 @@ export function startRound(prev: GameState): GameState {
     p.hasActed = false;
     p.passed = false;
     p.refusedMe = [];
+    p.chosenBottom = null;
+    p.arrangedDone = false;
   }
   s.phase = 'exchange';
   s.pending = null;
@@ -184,7 +194,32 @@ function advanceTurn(s: GameState, from: number): GameState {
     s.turn = i;
     return s;
   }
-  return showdown(s);
+  return enterArrange(s);
+}
+
+/** 换牌结束 → 拆分阶段。特殊胜利的手牌无需拆分，自动视为已完成 */
+function enterArrange(s: GameState): GameState {
+  s.phase = 'arrange';
+  for (const p of s.players) {
+    if (evalSpecials(p.hand).length > 0) p.arrangedDone = true;
+  }
+  pushLog(s, { text: '换牌结束，请各自拆分 3+2（选 3 张做底牌）', kind: 'arrange' });
+  if (s.players.every((p) => p.arrangedDone)) return showdown(s);
+  return s;
+}
+
+/** 拆分阶段：提交自选的 3 张底牌；全员完成后摊牌 */
+export function doArrange(prev: GameState, pid: number, bottomIds: string[]): GameState {
+  const s = structuredClone(prev);
+  const p = s.players[pid];
+  if (s.phase !== 'arrange' || p.arrangedDone) return s;
+  const unique = [...new Set(bottomIds)];
+  if (unique.length !== 3 || !unique.every((id) => p.hand.some((c) => c.id === id))) return s;
+  p.chosenBottom = unique;
+  p.arrangedDone = true;
+  pushLog(s, { text: `${p.name} 完成拆分`, kind: 'arranged', seat: pid });
+  if (s.players.every((x) => x.arrangedDone)) return showdown(s);
+  return s;
 }
 
 function afterAction(s: GameState, pid: number): GameState {
@@ -314,7 +349,11 @@ export function markSeatAi(prev: GameState, pid: number): GameState {
 }
 
 function showdown(s: GameState): GameState {
-  const entries = s.players.map((p) => ({ id: p.id, eval: evaluateHand(p.hand), cards: p.hand }));
+  const entries = s.players.map((p) => ({
+    id: p.id,
+    eval: evaluateChosen(p.hand, p.chosenBottom),
+    cards: p.hand,
+  }));
   let bestEntry = entries[0];
   for (const e of entries.slice(1)) {
     if (compareHands(e, bestEntry) > 0) bestEntry = e;

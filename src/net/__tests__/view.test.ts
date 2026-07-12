@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createGame, doPass, doRequest, doRespond, GameState } from '../../engine/game';
+import {
+  createGame,
+  doArrange,
+  doPass,
+  doRequest,
+  doRespond,
+  GameState,
+} from '../../engine/game';
 import { applyAction } from '../apply';
 import { viewFor, resolvePickIndex } from '../view';
 
@@ -24,12 +31,32 @@ describe('视图脱敏 viewFor', () => {
 
   it('摊牌阶段全部揭示并附结算结果', () => {
     let s = newGame();
-    // 全员结束换牌 → 摊牌
-    for (let i = 0; i < 3 && s.phase === 'exchange'; i++) s = doPass(s, s.turn);
+    // 全员结束换牌 → 拆分 → 摊牌
+    while (s.phase === 'exchange') s = doPass(s, s.turn);
+    while (s.phase === 'arrange') {
+      const p = s.players.find((x) => !x.arrangedDone)!;
+      s = doArrange(
+        s,
+        p.id,
+        p.hand.slice(0, 3).map((c) => c.id),
+      );
+    }
     expect(s.phase).toBe('showdown');
     const v = viewFor(s, 2);
     expect(v.players[0].hand).toEqual(s.players[0].hand);
     expect(v.result).not.toBeNull();
+  });
+
+  it('他人的拆分选择在摊牌前不可见', () => {
+    let s: GameState = { ...newGame(), phase: 'arrange' };
+    s = doArrange(
+      s,
+      0,
+      s.players[0].hand.slice(0, 3).map((c) => c.id),
+    );
+    expect(s.phase).toBe('arrange'); // 其他人未提交
+    expect(viewFor(s, 1).players[0].chosenBottom).toBeNull();
+    expect(viewFor(s, 0).players[0].chosenBottom).toHaveLength(3);
   });
 
   it('picking 中指向暗牌的 pick 翻译为掩码 id，指向自己牌的保持真实 id', () => {
@@ -84,6 +111,14 @@ describe('动作应用 applyAction', () => {
     let s = newGame();
     expect(applyAction(s, 0, { k: 'nextRound' }).round).toBe(1);
     while (s.phase === 'exchange') s = doPass(s, s.turn);
+    while (s.phase === 'arrange') {
+      const p = s.players.find((x) => !x.arrangedDone)!;
+      s = applyAction(s, p.id, {
+        k: 'arrange',
+        bottomIds: p.hand.slice(0, 3).map((c) => c.id),
+      });
+    }
+    expect(s.phase).toBe('showdown');
     s = applyAction(s, 0, { k: 'nextRound' });
     expect(s.round).toBe(2);
     expect(s.phase).toBe('exchange');

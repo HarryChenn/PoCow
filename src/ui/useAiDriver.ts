@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import {
   currentPicker,
+  doArrange,
   doDeckSwap,
   doPass,
   doPick,
@@ -10,6 +11,7 @@ import {
   GameState,
 } from '../engine/game';
 import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../engine/ai';
+import { evaluateHand } from '../engine/scoring';
 
 const AI_DELAY = 600;
 const PICK_DELAY = 350;
@@ -25,7 +27,27 @@ export function useAiDriver(
   apply: (fn: (g: GameState) => GameState) => void,
 ) {
   useEffect(() => {
-    if (!state || state.phase !== 'exchange') return;
+    if (!state) return;
+
+    if (state.phase === 'arrange') {
+      const next = state.players.find((p) => !p.isHuman && !p.arrangedDone);
+      if (!next) return;
+      const pid = next.id;
+      const t = setTimeout(
+        () =>
+          apply((g) => {
+            const p = g.players[pid];
+            if (g.phase !== 'arrange' || p.arrangedDone) return g;
+            const ev = evaluateHand(p.hand);
+            const bottom = ev.split ? ev.split.bottom : p.hand.slice(0, 3);
+            return doArrange(g, pid, bottom.map((c) => c.id));
+          }),
+        AI_DELAY,
+      );
+      return () => clearTimeout(t);
+    }
+
+    if (state.phase !== 'exchange') return;
 
     if (state.picking) {
       const picker = currentPicker(state);
