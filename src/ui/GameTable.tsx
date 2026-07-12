@@ -1,11 +1,11 @@
 import { CSSProperties, useEffect, useRef, useState } from 'react';
 import {
+  availableTargets,
   canDeckSwap,
-  canRequest,
-  currentPicker,
   deckSize,
-  eligibleTargets,
   GameStateLike,
+  isBusy,
+  sessionOf,
 } from '../engine/game';
 import { evaluateChosen, evaluateHand } from '../engine/scoring';
 import { PlayerAction } from '../net/protocol';
@@ -31,7 +31,6 @@ interface FloatItem {
   x: number;
   y: number;
   text: string;
-  /** 印章样式（如「拒 绝」）：红框斜盖章，区别于普通飘字 */
   stamp?: boolean;
 }
 
@@ -82,15 +81,20 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
 
   const me = state.players[myId];
   const opponents = [...state.players.slice(myId + 1), ...state.players.slice(0, myId)];
-  const pk = state.picking;
-  const pickerNow = currentPicker(state);
-  const pickSourceId = pk && pickerNow !== null ? (pickerNow === pk.from ? pk.to : pk.from) : null;
-  const iAmPicking = pickerNow === myId && !busy;
-  const isMyTurn =
-    state.phase === 'exchange' && state.turn === myId && !state.pending && !pk && !busy;
-  const pendingToMe = state.pending && state.pending.to === myId;
+  const mySession = sessionOf(state, myId);
+  const myPickDone = mySession
+    ? (myId === mySession.from ? mySession.fromPick : mySession.toPick) !== null
+    : false;
+  const myPartnerId = mySession ? (myId === mySession.from ? mySession.to : mySession.from) : null;
+  const iAmPicking = !!mySession && mySession.stage === 'picking' && !myPickDone && !busy;
+  const pendingToMe = !!mySession && mySession.stage === 'pending' && mySession.to === myId;
+  const iRequested = !!mySession && mySession.stage === 'pending' && mySession.from === myId;
+  /** 空闲：可自由行动（发起交换 / 换牌堆 / 结束） */
+  const iAmFree =
+    state.phase === 'exchange' && !me.passed && !mySession && !busy;
   const myEval = evaluateHand(me.hand);
-  const targets = eligibleTargets(state, myId);
+  const targets = availableTargets(state, myId);
+  const arranging = state.phase === 'arrange' && !me.arrangedDone;
 
   const addFloat = (seatId: number, text: string, stamp = false) => {
     const el = document.querySelector(`[data-seat-id="${seatId}"]`);
@@ -129,26 +133,19 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     });
   };
 
-  // 回合/阶段横幅
+  // 阶段横幅
   useEffect(() => {
     if (state.phase === 'showdown') return;
-    if (state.phase === 'arrange') {
-      setBanner('拆分 3 + 2 ！');
-    } else {
-      const p = state.players[state.turn];
-      setBanner(p.id === myId ? '轮到你了！' : `轮到 ${p.name}`);
-    }
+    setBanner(state.phase === 'arrange' ? '拆分 3 + 2 ！' : '自由换牌，开始！');
     const t = setTimeout(() => setBanner(null), 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.turn, state.round, state.phase]);
+  }, [state.round, state.phase]);
 
   // 换局/换阶段时清空拆分选择
   useEffect(() => {
     setBottomSel([]);
   }, [state.round, state.phase]);
-
-  const arranging = state.phase === 'arrange' && !me.arrangedDone;
 
   const toggleBottom = (cardId: string) => {
     setBottomSel((sel) =>
@@ -223,6 +220,23 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.log]);
 
+  // 会话双方都选定 → 亮牌窗口：两张被选中的牌互飞（实际互换由驱动方计时提交）
+  const animatedReveals = useRef(new Set<string>());
+  useEffect(() => {
+    for (const ses of state.sessions) {
+      if (ses.fromPick === null || ses.toPick === null) continue;
+      const key = `${state.round}-${ses.from}-${ses.to}-${ses.fromPick}-${ses.toPick}`;
+      if (animatedReveals.current.has(key)) continue;
+      animatedReveals.current.add(key);
+      setTimeout(() => {
+        const a = cardRect(ses.fromPick!);
+        const b = cardRect(ses.toPick!);
+        if (a && b) flyCards(a, b);
+      }, 250);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.sessions]);
+
   // 手牌变化后的强弱反馈：变强撒金星，变弱掉滴汗
   const prevHand = useRef<{ round: number; ids: string; power: number } | null>(null);
   useEffect(() => {
@@ -256,37 +270,29 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   };
 
   const pickCard = (index: number) => {
-    if (busy || !pk) return;
+    if (busy || !iAmPicking) return;
     onAction({ k: 'pick', index });
   };
 
-  // 双方都选定 → 亮牌窗口：两张被选中的牌互飞（实际互换由驱动方在窗口结束时提交）
-  const revealAnimated = useRef(false);
-  useEffect(() => {
-    const bothPicked = !!pk && pk.fromPick !== null && pk.toPick !== null;
-    if (!bothPicked) {
-      revealAnimated.current = false;
-      return;
-    }
-    if (revealAnimated.current) return;
-    revealAnimated.current = true;
-    const t = setTimeout(() => {
-      const a = cardRect(pk!.fromPick!);
-      const b = cardRect(pk!.toPick!);
-      if (a && b) flyCards(a, b);
-    }, 250);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pk?.fromPick, pk?.toPick]);
+  const isPicked = (cardId: string) =>
+    state.sessions.some((x) => x.fromPick === cardId || x.toPick === cardId);
 
-  const isPicked = (cardId: string) => !!pk && (cardId === pk.fromPick || cardId === pk.toPick);
+  /** 座位是否在等待其决定（跳动省略号） */
+  const isDeciding = (pid: number): boolean => {
+    if (state.phase === 'arrange') return !state.players[pid].arrangedDone;
+    if (state.phase !== 'exchange') return false;
+    const ses = sessionOf(state, pid);
+    if (!ses) return false;
+    if (ses.stage === 'pending') return ses.to === pid;
+    return (pid === ses.from ? ses.fromPick : ses.toPick) === null;
+  };
 
-  /** 正在等待其决定的座位（跳动省略号），本人除外 */
-  const thinkingId = (() => {
-    if (state.phase !== 'exchange' || busy) return null;
-    const waitingOn = pk ? pickerNow : state.pending ? state.pending.to : state.turn;
-    return waitingOn === null || waitingOn === myId ? null : waitingOn;
-  })();
+  const partnerName = (pid: number): string | null => {
+    const ses = sessionOf(state, pid);
+    if (!ses) return null;
+    const partner = pid === ses.from ? ses.to : ses.from;
+    return partner === myId ? '你' : state.players[partner].name;
+  };
 
   const phaseText = () => {
     if (state.phase === 'showdown') return '摊牌';
@@ -294,13 +300,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
       const done = state.players.filter((p) => p.arrangedDone).length;
       return `拆分阶段（${done}/${state.players.length} 已提交）`;
     }
-    if (busy) return '交换中…';
-    if (pk) {
-      if (pickerNow === null) return '双方已选定，正在交换…';
-      return `${state.players[pickerNow].name} 正在暗选 ${state.players[pickSourceId!].name} 的一张牌…`;
-    }
-    if (state.pending) return `等待 ${state.players[state.pending.to].name} 响应交换…`;
-    return `轮到 ${state.players[state.turn].name} 行动`;
+    const passed = state.players.filter((p) => p.passed).length;
+    return `自由换牌（${passed}/${state.players.length} 已结束）`;
   };
 
   return (
@@ -318,16 +319,15 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
 
       <div className="opponents-row">
         {opponents.map((p) => {
-          const swappable = isMyTurn && mode === 'idle' && targets.includes(p.id);
-          const pickHere = iAmPicking && pickSourceId === p.id;
-          const active =
-            state.phase === 'exchange' && !pk && !state.pending && state.turn === p.id;
-          const rippling = state.pending?.to === p.id;
+          const swappable = iAmFree && mode === 'idle' && targets.includes(p.id);
+          const pickHere = iAmPicking && myPartnerId === p.id;
+          const busySeat = state.phase === 'exchange' && isBusy(state, p.id);
+          const rippling = state.sessions.some((x) => x.stage === 'pending' && x.to === p.id);
           return (
             <div
               key={p.id}
               data-seat-id={p.id}
-              className={`seat ${active ? 'seat-active' : ''} ${pickHere ? 'seat-picking' : ''} ${rippling ? 'seat-ripple' : ''}`}
+              className={`seat ${busySeat ? 'seat-busy' : ''} ${pickHere ? 'seat-picking' : ''} ${rippling ? 'seat-ripple' : ''}`}
             >
               {swappable && (
                 <button
@@ -340,8 +340,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               <div className="seat-name">
                 {!p.isHuman && <span className="ai-tag">AI</span>}
                 {p.name}
-                {(thinkingId === p.id ||
-                  (state.phase === 'arrange' && !p.arrangedDone)) && (
+                {isDeciding(p.id) && (
                   <span className="think-dots">
                     <i />
                     <i />
@@ -367,6 +366,9 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                 ))}
               </div>
               <div className="seat-status">
+                {busySeat && (
+                  <span className="chip chip-busy">🔄 与 {partnerName(p.id)} 交换中</span>
+                )}
                 {p.usedDeckSwap && <span className="chip">已换牌堆</span>}
                 {(p.swapsWith[myId] ?? 0) > 0 && (
                   <span className="chip">与你已换 {p.swapsWith[myId]}/2</span>
@@ -385,11 +387,11 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
       <div className="mid-row">
         <div
           className={`deck-pile ${mode === 'discard' ? 'deck-active' : ''} ${
-            isMyTurn && canDeckSwap(state, myId) ? 'deck-clickable' : ''
+            iAmFree && canDeckSwap(state, myId) ? 'deck-clickable' : ''
           }`}
           data-deck="true"
           onClick={() => {
-            if (isMyTurn && canDeckSwap(state, myId)) {
+            if (iAmFree && canDeckSwap(state, myId)) {
               setMode(mode === 'discard' ? 'idle' : 'discard');
             }
           }}
@@ -411,7 +413,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
       </div>
 
       <div
-        className={`human-area ${isMyTurn || iAmPicking ? 'area-turn' : ''}`}
+        className={`human-area ${iAmFree || iAmPicking || arranging ? 'area-turn' : ''}`}
         data-seat-id={myId}
       >
         <div className="human-info">
@@ -446,10 +448,10 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   (arranging && bottomSel.includes(c.id)) ||
                   (state.phase === 'arrange' && !!me.chosenBottom?.includes(c.id))
                 }
-                selectable={(mode === 'discard' && isMyTurn) || arranging}
+                selectable={(mode === 'discard' && iAmFree) || arranging}
                 onClick={() => {
                   if (arranging) toggleBottom(c.id);
-                  else if (mode === 'discard' && isMyTurn) discardCard(c.id);
+                  else if (mode === 'discard' && iAmFree) discardCard(c.id);
                 }}
               />
             </div>
@@ -488,15 +490,33 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
             </div>
           ))}
 
-        {iAmPicking && pickSourceId !== null && (
+        {iAmPicking && myPartnerId !== null && (
           <div className="action-bar">
             <span className="mode-hint">
-              点击 {state.players[pickSourceId].name} 的一张暗牌，选走它
+              点击 {state.players[myPartnerId].name} 的一张暗牌，选走它
             </span>
           </div>
         )}
 
-        {isMyTurn && (
+        {mySession && mySession.stage === 'picking' && myPickDone && (
+          <div className="action-bar">
+            <span className="bar-hint">已选定，等待对方选牌…</span>
+          </div>
+        )}
+
+        {iRequested && myPartnerId !== null && (
+          <div className="action-bar">
+            <span className="bar-hint">等待 {state.players[myPartnerId].name} 响应交换…</span>
+          </div>
+        )}
+
+        {state.phase === 'exchange' && me.passed && (
+          <div className="action-bar">
+            <span className="bar-hint">已结束换牌，等待其他玩家…</span>
+          </div>
+        )}
+
+        {iAmFree && (
           <div className="action-bar">
             {mode === 'idle' && (
               <>
@@ -510,7 +530,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                 <button className="btn btn-primary" onClick={() => onAction({ k: 'pass' })}>
                   结束换牌
                 </button>
-                {canRequest(state, myId) && (
+                {targets.length > 0 && (
                   <span className="bar-hint">
                     点对手座位上的 🤝 可发起换牌（同一对玩家最多互换 2 次）
                   </span>
@@ -529,11 +549,11 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         )}
       </div>
 
-      {pendingToMe && (
+      {pendingToMe && mySession && (
         <div className="modal-overlay">
           <div className="modal">
             <p>
-              {state.players[state.pending!.from].name} 想与你交换手牌
+              {state.players[mySession.from].name} 想与你交换手牌
               <br />
               <small>（若接受，双方各从对方手牌中暗选一张互换）</small>
             </p>
@@ -555,7 +575,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
       {banner && state.phase !== 'showdown' && (
         <>
           <div className="turn-banner">{banner}</div>
-          {state.turn === myId && <div className="turn-flash" />}
+          <div className="turn-flash" />
         </>
       )}
 

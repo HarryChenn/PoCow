@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-  currentPicker,
+  bestBottomIds,
   doArrange,
   doDeckSwap,
   doPass,
@@ -9,18 +9,22 @@ import {
   doRequest,
   doRespond,
   GameState,
+  isBusy,
 } from '../engine/game';
 import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../engine/ai';
-import { evaluateHand } from '../engine/scoring';
 
-const AI_DELAY = 600;
-const PICK_DELAY = 350;
+const AI_DELAY = 550;
+const PICK_DELAY = 400;
 /** 双方选定后的亮牌窗口：高亮 + 飞牌动画播完再互换 */
 const REVEAL_DELAY = 1000;
 
+function jitter(base: number): number {
+  return base + Math.random() * 350;
+}
+
 /**
- * AI 驱动循环：为所有非真人座位自动行动（响应请求 / 选牌 / 出招）。
- * 单机与房主模式使用；客户端不驱动 AI。传 null 关闭。
+ * AI 驱动循环（自由换牌：并行会话）：每次状态变化处理一件最紧急的 AI 事务。
+ * 单机与房主模式使用；客户端不驱动。传 null 关闭。
  */
 export function useAiDriver(
   state: GameState | null,
@@ -35,65 +39,77 @@ export function useAiDriver(
       const pid = next.id;
       const t = setTimeout(
         () =>
-          apply((g) => {
-            const p = g.players[pid];
-            if (g.phase !== 'arrange' || p.arrangedDone) return g;
-            const ev = evaluateHand(p.hand);
-            const bottom = ev.split ? ev.split.bottom : p.hand.slice(0, 3);
-            return doArrange(g, pid, bottom.map((c) => c.id));
-          }),
-        AI_DELAY,
+          apply((g) =>
+            g.phase === 'arrange' && !g.players[pid].arrangedDone
+              ? doArrange(g, pid, bestBottomIds(g.players[pid].hand))
+              : g,
+          ),
+        jitter(AI_DELAY),
       );
       return () => clearTimeout(t);
     }
 
     if (state.phase !== 'exchange') return;
 
-    if (state.picking) {
-      const picker = currentPicker(state);
-      if (picker === null) {
-        // 双方都已选定：亮牌片刻后执行互换
-        const t = setTimeout(() => apply(doPickCommit), REVEAL_DELAY);
-        return () => clearTimeout(t);
-      }
-      if (state.players[picker].isHuman) return;
+    // 1) 双方已选定的会话 → 亮牌片刻后执行互换（对真人会话同样由驱动方计时）
+    const ready = state.sessions.find((x) => x.fromPick !== null && x.toPick !== null);
+    if (ready) {
+      const from = ready.from;
+      const t = setTimeout(() => apply((g) => doPickCommit(g, from)), REVEAL_DELAY);
+      return () => clearTimeout(t);
+    }
+
+    // 2) 等待 AI 响应的请求
+    const toRespond = state.sessions.find(
+      (x) => x.stage === 'pending' && !state.players[x.to].isHuman,
+    );
+    if (toRespond) {
+      const pid = toRespond.to;
       const t = setTimeout(
-        () =>
-          apply((g) =>
-            g.picking && currentPicker(g) === picker
-              ? doPick(g, picker, aiPickFromOpponent(g, picker))
-              : g,
-          ),
-        PICK_DELAY,
+        () => apply((g) => doRespond(g, pid, aiRespond(g, pid))),
+        jitter(AI_DELAY),
       );
       return () => clearTimeout(t);
     }
 
-    if (state.pending) {
-      const responder = state.pending.to;
-      if (state.players[responder].isHuman) return;
+    // 3) 等待 AI 暗选的会话
+    const toPick = state.sessions.find(
+      (x) =>
+        x.stage === 'picking' &&
+        ((x.fromPick === null && !state.players[x.from].isHuman) ||
+          (x.toPick === null && !state.players[x.to].isHuman)),
+    );
+    if (toPick) {
+      const pid =
+        toPick.fromPick === null && !state.players[toPick.from].isHuman
+          ? toPick.from
+          : toPick.to;
       const t = setTimeout(
         () =>
           apply((g) =>
-            g.pending?.to === responder ? doRespond(g, aiRespond(g, responder)) : g,
+            isBusy(g, pid) ? doPick(g, pid, aiPickFromOpponent(g, pid)) : g,
           ),
-        AI_DELAY,
+        jitter(PICK_DELAY),
       );
       return () => clearTimeout(t);
     }
 
-    if (state.players[state.turn].isHuman) return;
+    // 4) 空闲 AI 出招
+    const idleAis = state.players.filter(
+      (p) => !p.isHuman && !p.passed && !isBusy(state, p.id),
+    );
+    if (idleAis.length === 0) return;
+    const pid = idleAis[Math.floor(Math.random() * idleAis.length)].id;
     const t = setTimeout(() => {
       apply((g) => {
-        if (g.phase !== 'exchange' || g.pending || g.picking || g.players[g.turn].isHuman) {
-          return g;
-        }
-        const a = aiChooseAction(g, g.turn);
-        if (a.type === 'deckSwap') return doDeckSwap(g, g.turn, a.cardId);
-        if (a.type === 'request') return doRequest(g, g.turn, a.to);
-        return doPass(g, g.turn);
+        if (g.phase !== 'exchange' || g.players[pid].passed || isBusy(g, pid)) return g;
+        const a = aiChooseAction(g, pid);
+        if (a.type === 'deckSwap') return doDeckSwap(g, pid, a.cardId);
+        if (a.type === 'request') return doRequest(g, pid, a.to);
+        if (a.type === 'pass') return doPass(g, pid);
+        return g; // wait：等下次状态变化
       });
-    }, AI_DELAY);
+    }, jitter(AI_DELAY));
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createGame,
-  currentPicker,
+  doArrange,
   doDeckSwap,
   doPass,
   doPick,
@@ -9,52 +9,53 @@ import {
   doRequest,
   doRespond,
   eligibleTargets,
+  availableTargets,
+  bestBottomIds,
   GameState,
+  isBusy,
   startRound,
 } from '../game';
 import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../ai';
-import { evaluateHand } from '../scoring';
-import { doArrange } from '../game';
 
 /** 全 AI 自动打完一局（用 AI 策略驱动所有人，包括“人类”位） */
 function playRound(state: GameState): GameState {
   let s = state;
   let guard = 0;
   while (s.phase !== 'showdown') {
-    if (++guard > 800) throw new Error('对局未收敛');
+    if (++guard > 1000) throw new Error('对局未收敛');
     if (s.phase === 'arrange') {
       const p = s.players.find((x) => !x.arrangedDone)!;
-      const ev = evaluateHand(p.hand);
-      const bottom = ev.split ? ev.split.bottom : p.hand.slice(0, 3);
-      s = doArrange(
-        s,
-        p.id,
-        bottom.map((c) => c.id),
-      );
+      s = doArrange(s, p.id, bestBottomIds(p.hand));
       continue;
     }
-    if (s.picking) {
-      const picker = currentPicker(s);
-      if (picker === null) {
-        s = doPickCommit(s);
-        continue;
-      }
-      s = doPick(s, picker, aiPickFromOpponent(s, picker));
+    // 会话优先：提交已双选的、响应请求、补选牌
+    const ready = s.sessions.find((x) => x.fromPick !== null && x.toPick !== null);
+    if (ready) {
+      s = doPickCommit(s, ready.from);
       continue;
     }
-    if (s.pending) {
-      s = doRespond(s, aiRespond(s, s.pending.to));
+    const pending = s.sessions.find((x) => x.stage === 'pending');
+    if (pending) {
+      s = doRespond(s, pending.to, aiRespond(s, pending.to));
       continue;
     }
-    const action = aiChooseAction(s, s.turn);
-    if (action.type === 'deckSwap') s = doDeckSwap(s, s.turn, action.cardId);
-    else if (action.type === 'request') s = doRequest(s, s.turn, action.to);
-    else s = doPass(s, s.turn);
+    const picking = s.sessions.find((x) => x.stage === 'picking');
+    if (picking) {
+      const who = picking.fromPick === null ? picking.from : picking.to;
+      s = doPick(s, who, aiPickFromOpponent(s, who));
+      continue;
+    }
+    const actor = s.players.find((p) => !p.passed && !isBusy(s, p.id));
+    if (!actor) throw new Error('无人可行动但未进入拆分');
+    const a = aiChooseAction(s, actor.id);
+    if (a.type === 'deckSwap') s = doDeckSwap(s, actor.id, a.cardId);
+    else if (a.type === 'request') s = doRequest(s, actor.id, a.to);
+    else s = doPass(s, actor.id); // wait 在无会话时不可能出现（无忙碌目标）
   }
   return s;
 }
 
-describe('整局流程', () => {
+describe('整局流程（自由换牌）', () => {
   it('多人多局：手牌数守恒、结算零和、分数正确累计', () => {
     let s = createGame(['你', 'A', 'B', 'C', 'D'], [0]);
     for (let round = 0; round < 20; round++) {
@@ -66,7 +67,6 @@ describe('整局流程', () => {
       const sumDelta = result.deltas.reduce((a, b) => a + b, 0);
       expect(Math.abs(sumDelta)).toBeLessThan(1e-9);
       expect(result.winners.length).toBeGreaterThan(0);
-      // 输家赔的都是赢家的赔率
       s.players.forEach((p) => {
         if (!result.winners.includes(p.id)) expect(result.deltas[p.id]).toBe(-result.payout);
       });
@@ -74,88 +74,93 @@ describe('整局流程', () => {
     }
   });
 
-  it('牌堆换牌后：自己不能再发起，别人也不能再找他换', () => {
-    let s = createGame(['你', 'A', 'B'], [0]);
-    const cardId = s.players[s.turn].hand[0].id;
-    const actor = s.turn;
-    const other = (actor + 1) % 3;
-    s = doDeckSwap(s, actor, cardId);
-    expect(s.players[actor].usedDeckSwap).toBe(true);
-    expect(s.players[actor].passed).toBe(true); // 无可用操作，自动结束
-    // 自己强行发起应被拒绝（状态不变）
-    expect(doRequest(s, actor, other).pending).toBeNull();
-    // 别人也不能指定他为交换对象
-    expect(eligibleTargets(s, other)).not.toContain(actor);
-    expect(doRequest(s, other, actor).pending).toBeNull();
+  it('并行会话：两对玩家可同时交换，交换中的人不可被第三方指定', () => {
+    let s = createGame(['甲', '乙', '丙', '丁'], [0, 1, 2, 3]);
+    s = doRequest(s, 0, 1);
+    s = doRequest(s, 2, 3);
+    expect(s.sessions).toHaveLength(2);
+    // 交换中的人不能再被发起/发起新的
+    expect(availableTargets(s, 0)).toEqual([]);
+    expect(doRequest(s, 0, 2).sessions).toHaveLength(2);
+    // 双组并行推进
+    s = doRespond(s, 1, true);
+    s = doRespond(s, 3, true);
+    s = doPick(s, 0, s.players[1].hand[0].id);
+    s = doPick(s, 3, s.players[2].hand[0].id);
+    s = doPick(s, 1, s.players[0].hand[0].id);
+    s = doPick(s, 2, s.players[3].hand[0].id);
+    s = doPickCommit(s, 0);
+    s = doPickCommit(s, 2);
+    expect(s.sessions).toHaveLength(0);
+    expect(s.players[0].swapsWith[1]).toBe(1);
+    expect(s.players[2].swapsWith[3]).toBe(1);
   });
 
-  it('接受交换后双方各暗选对方一张，指定的两张牌互换', () => {
+  it('牌堆换牌后：自己不能再发起，别人也不能再找他换', () => {
     let s = createGame(['你', 'A', 'B'], [0]);
-    const from = s.turn;
-    const to = (from + 1) % 3;
-    s = doRequest(s, from, to);
-    s = doRespond(s, true);
-    expect(s.picking).toEqual({ from, to, fromPick: null, toPick: null });
-    expect(currentPicker(s)).toBe(from);
+    s = doDeckSwap(s, 0, s.players[0].hand[0].id);
+    expect(s.players[0].usedDeckSwap).toBe(true);
+    expect(s.players[0].passed).toBe(true); // 无可用操作，自动结束
+    expect(doRequest(s, 0, 1).sessions).toHaveLength(0);
+    expect(eligibleTargets(s, 1)).not.toContain(0);
+    expect(doRequest(s, 1, 0).sessions).toHaveLength(0);
+  });
 
-    const wantFromTo = s.players[to].hand[2].id; // from 选中 to 的第 3 张
-    const wantFromFrom = s.players[from].hand[4].id; // to 选中 from 的第 5 张
+  it('接受交换后双方各暗选（可同时选），指定的两张牌互换', () => {
+    let s = createGame(['你', 'A', 'B'], [0]);
+    s = doRequest(s, 0, 1);
+    s = doRespond(s, 1, true);
+    expect(s.sessions[0]).toEqual({ from: 0, to: 1, stage: 'picking', fromPick: null, toPick: null });
 
-    // 未轮到 to 选牌、或选了不属于对方的牌，都应被忽略
-    expect(doPick(s, to, wantFromFrom).picking).toEqual(s.picking);
-    expect(doPick(s, from, s.players[from].hand[0].id).picking).toEqual(s.picking);
+    const wantFromTo = s.players[1].hand[2].id;
+    const wantFromFrom = s.players[0].hand[4].id;
 
-    s = doPick(s, from, wantFromTo);
-    expect(currentPicker(s)).toBe(to);
-    s = doPick(s, to, wantFromFrom);
+    // 选了不属于对方的牌应被忽略
+    expect(doPick(s, 0, s.players[0].hand[0].id).sessions[0].fromPick).toBeNull();
 
-    // 双方选定后进入亮牌窗口：尚未互换，双选可见
-    expect(s.picking).toEqual({ from, to, fromPick: wantFromTo, toPick: wantFromFrom });
-    expect(s.players[to].hand.map((c) => c.id)).toContain(wantFromTo);
+    // to 先选也可以（并行暗选）
+    s = doPick(s, 1, wantFromFrom);
+    expect(s.sessions[0].toPick).toBe(wantFromFrom);
+    s = doPick(s, 0, wantFromTo);
 
-    s = doPickCommit(s);
-    expect(s.picking).toBeNull();
-    expect(s.players[from].hand.map((c) => c.id)).toContain(wantFromTo);
-    expect(s.players[to].hand.map((c) => c.id)).toContain(wantFromFrom);
-    expect(s.players[from].hand).toHaveLength(5);
-    expect(s.players[to].hand).toHaveLength(5);
-    expect(s.players[from].swapsWith[to]).toBe(1);
-    expect(s.players[to].swapsWith[from]).toBe(1);
+    // 双方选定后进入亮牌窗口：尚未互换
+    expect(s.sessions[0].fromPick).toBe(wantFromTo);
+    expect(s.players[1].hand.map((c) => c.id)).toContain(wantFromTo);
+
+    s = doPickCommit(s, 0);
+    expect(s.sessions).toHaveLength(0);
+    expect(s.players[0].hand.map((c) => c.id)).toContain(wantFromTo);
+    expect(s.players[1].hand.map((c) => c.id)).toContain(wantFromFrom);
+    expect(s.players[0].hand).toHaveLength(5);
+    expect(s.players[1].hand).toHaveLength(5);
+    expect(s.players[0].swapsWith[1]).toBe(1);
+    expect(s.players[1].swapsWith[0]).toBe(1);
   });
 
   it('同一对玩家之间最多互换 2 次（不论谁发起），与第三人不受影响', () => {
     let s = createGame(['你', 'A', 'B'], [0]);
-    const a = s.turn;
-    const b = (a + 1) % 3;
-    const c = (a + 2) % 3;
     const doSwap = (from: number, to: number) => {
       s = doRequest(s, from, to);
-      s = doRespond(s, true);
+      s = doRespond(s, to, true);
       s = doPick(s, from, s.players[to].hand[0].id);
       s = doPick(s, to, s.players[from].hand[0].id);
-      s = doPickCommit(s);
+      s = doPickCommit(s, from);
     };
-    doSwap(a, b);
-    expect(s.players[a].swapsWith[b]).toBe(1);
-    expect(s.players[b].swapsWith[a]).toBe(1);
-    // 反方向发起也计入同一对的次数
-    doSwap(b, a);
-    expect(eligibleTargets(s, a)).not.toContain(b);
-    expect(eligibleTargets(s, b)).not.toContain(a);
-    // 与第三人仍可交换
-    expect(eligibleTargets(s, a)).toContain(c);
+    doSwap(0, 1);
+    expect(s.players[0].swapsWith[1]).toBe(1);
+    doSwap(1, 0); // 反方向发起也计入同一对
+    expect(eligibleTargets(s, 0)).not.toContain(1);
+    expect(eligibleTargets(s, 1)).not.toContain(0);
+    expect(eligibleTargets(s, 0)).toContain(2);
   });
 
-  it('被拒绝不消耗互换次数，但不能再找同一人', () => {
+  it('被拒绝不消耗互换次数，但不能再找同一人；交换中不可结束换牌', () => {
     let s = createGame(['你', 'A', 'B'], [0]);
-    const actor = s.turn;
-    const target = (actor + 1) % 3;
-    s = doRequest(s, actor, target);
-    expect(s.pending).toEqual({ from: actor, to: target });
-    s = doRespond(s, false);
-    expect(s.players[actor].swapsWith[target] ?? 0).toBe(0);
-    // 不能再向拒绝过自己的人发起
-    const blocked = doRequest(s, actor, target);
-    expect(blocked.pending).toBeNull();
+    s = doRequest(s, 0, 1);
+    // 交换中不可 pass
+    expect(doPass(s, 0).players[0].passed).toBe(false);
+    s = doRespond(s, 1, false);
+    expect(s.players[0].swapsWith[1] ?? 0).toBe(0);
+    expect(doRequest(s, 0, 1).sessions).toHaveLength(0);
   });
 });

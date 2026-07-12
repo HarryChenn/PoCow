@@ -1,5 +1,5 @@
 import { Card, makeDeck, shuffle } from './cards';
-import { evalSpecials, evaluateChosen, HandEval } from './scoring';
+import { evalSpecials, evaluateChosen, evaluateHand, HandEval } from './scoring';
 import { compareHands } from './compare';
 
 export interface PlayerState {
@@ -13,7 +13,7 @@ export interface PlayerState {
   swapsWith: Record<number, number>;
   /** 本局是否已与牌堆换牌（换后本局退出与对手的换牌，双向） */
   usedDeckSwap: boolean;
-  /** 本局是否已做过任何主动动作（牌堆换牌仅限局开始、未行动时） */
+  /** 本局是否已做过任何主动动作（牌堆换牌仅限尚未行动时） */
   hasActed: boolean;
   passed: boolean;
   /** 本局拒绝过我的对手（不能再次向其发起） */
@@ -24,16 +24,17 @@ export interface PlayerState {
   arrangedDone: boolean;
 }
 
-export interface PendingRequest {
+/**
+ * 一组正在进行的交换（自由换牌：多组可并行，一名玩家同时只能在一组中）。
+ * pending：等待 to 接受/拒绝；picking：双方各自从对方手牌暗选一张（可同时选）。
+ */
+export interface ExchangeSession {
   from: number;
   to: number;
-}
-
-/** 交换被接受后，双方各从对方手牌中暗选一张（fromPick 是 from 选中的 to 的牌） */
-export interface PickingState {
-  from: number;
-  to: number;
+  stage: 'pending' | 'picking';
+  /** from 选中的 to 的牌 */
   fromPick: string | null;
+  /** to 选中的 from 的牌 */
   toPick: string | null;
 }
 
@@ -75,9 +76,7 @@ export interface GameState {
   deck: Card[];
   round: number;
   phase: 'exchange' | 'arrange' | 'showdown';
-  turn: number;
-  pending: PendingRequest | null;
-  picking: PickingState | null;
+  sessions: ExchangeSession[];
   log: LogEntry[];
   logSeq: number;
   result: RoundResult | null;
@@ -88,6 +87,15 @@ export type GameStateLike = Omit<GameState, 'deck'> & { deck?: Card[]; deckCount
 
 export function deckSize(s: GameStateLike): number {
   return s.deck ? s.deck.length : (s.deckCount ?? 0);
+}
+
+/** pid 所在的进行中交换（同时最多一组） */
+export function sessionOf(s: GameStateLike, pid: number): ExchangeSession | null {
+  return s.sessions.find((x) => x.from === pid || x.to === pid) ?? null;
+}
+
+export function isBusy(s: GameStateLike, pid: number): boolean {
+  return sessionOf(s, pid) !== null;
 }
 
 export function createGame(names: string[], humanSeats: number[]): GameState {
@@ -110,9 +118,7 @@ export function createGame(names: string[], humanSeats: number[]): GameState {
     deck: [],
     round: 0,
     phase: 'exchange',
-    turn: 0,
-    pending: null,
-    picking: null,
+    sessions: [],
     log: [],
     logSeq: 0,
     result: null,
@@ -135,22 +141,19 @@ export function startRound(prev: GameState): GameState {
     p.arrangedDone = false;
   }
   s.phase = 'exchange';
-  s.pending = null;
-  s.picking = null;
+  s.sessions = [];
   s.result = null;
-  s.turn = (s.round - 1) % s.players.length;
-  pushLog(s, {
-    text: `—— 第 ${s.round} 局开始，${s.players[s.turn].name} 先行动 ——`,
-    kind: 'round',
-  });
+  pushLog(s, { text: `—— 第 ${s.round} 局开始，自由换牌 ——`, kind: 'round' });
   return s;
 }
 
+/** 立即可与牌堆换牌（含「不在交换中」的即时约束） */
 export function canDeckSwap(s: GameStateLike, pid: number): boolean {
   const p = s.players[pid];
-  return !p.passed && !p.hasActed && deckSize(s) > 0;
+  return !p.passed && !p.hasActed && deckSize(s) > 0 && !isBusy(s, pid);
 }
 
+/** 永久性可交换对象（不含「对方正忙」这种临时状态） */
 export function eligibleTargets(s: GameStateLike, pid: number): number[] {
   const p = s.players[pid];
   if (p.usedDeckSwap) return [];
@@ -165,36 +168,151 @@ export function eligibleTargets(s: GameStateLike, pid: number): number[] {
     .map((o) => o.id);
 }
 
-export function canRequest(s: GameStateLike, pid: number): boolean {
-  return !s.players[pid].passed && eligibleTargets(s, pid).length > 0;
+/** 此刻真正可发起交换的对象（排除正在交换中的双方） */
+export function availableTargets(s: GameStateLike, pid: number): number[] {
+  if (s.players[pid].passed || isBusy(s, pid)) return [];
+  return eligibleTargets(s, pid).filter((o) => !isBusy(s, o));
 }
 
-export function hasMoves(s: GameStateLike, pid: number): boolean {
-  return canDeckSwap(s, pid) || canRequest(s, pid);
+/** 是否还有潜在动作（用于自动结束判定；「对方在忙」是暂时的，不算没动作） */
+function hasPotentialMoves(s: GameState, pid: number): boolean {
+  const p = s.players[pid];
+  return (!p.hasActed && s.deck.length > 0) || eligibleTargets(s, pid).length > 0;
 }
 
-/** 选牌阶段中当前应选牌的玩家（先 from 后 to），选完为 null */
-export function currentPicker(s: GameStateLike): number | null {
-  if (!s.picking) return null;
-  if (s.picking.fromPick === null) return s.picking.from;
-  if (s.picking.toPick === null) return s.picking.to;
-  return null;
-}
-
-function advanceTurn(s: GameState, from: number): GameState {
-  let i = from;
-  for (let step = 0; step < s.players.length; step++) {
-    i = (i + 1) % s.players.length;
-    const p = s.players[i];
-    if (p.passed) continue;
-    if (!hasMoves(s, p.id)) {
+/** 每次动作后的清扫：无事可做的玩家自动结束；全员结束且无进行中交换 → 拆分阶段 */
+function sweep(s: GameState): GameState {
+  for (const p of s.players) {
+    if (!p.passed && !isBusy(s, p.id) && !hasPotentialMoves(s, p.id)) {
       p.passed = true;
-      continue;
     }
-    s.turn = i;
+  }
+  if (s.players.every((p) => p.passed) && s.sessions.length === 0) {
+    return enterArrange(s);
+  }
+  return s;
+}
+
+/** 与牌堆换牌：弃指定一张，从牌堆摸一张。仅限尚未行动时；换后本局退出与对手的换牌 */
+export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameState {
+  const s = structuredClone(prev);
+  const p = s.players[pid];
+  if (s.phase !== 'exchange' || !canDeckSwap(s, pid)) return s;
+  const idx = p.hand.findIndex((c) => c.id === cardId);
+  if (idx < 0) return s;
+  p.hand.splice(idx, 1);
+  p.hand.push(s.deck.shift() as Card);
+  p.usedDeckSwap = true;
+  p.hasActed = true;
+  pushLog(s, {
+    text: `${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`,
+    kind: 'deckSwap',
+    seat: pid,
+  });
+  return sweep(s);
+}
+
+/** 发起对手交换：双方都必须空闲；对方可拒绝 */
+export function doRequest(prev: GameState, from: number, to: number): GameState {
+  const s = structuredClone(prev);
+  if (s.phase !== 'exchange' || !availableTargets(s, from).includes(to)) return s;
+  s.sessions.push({ from, to, stage: 'pending', fromPick: null, toPick: null });
+  pushLog(s, {
+    text: `${s.players[from].name} 请求与 ${s.players[to].name} 交换手牌`,
+    kind: 'request',
+    seat: from,
+    seat2: to,
+  });
+  return s;
+}
+
+/** 响应交换：接受则双方进入暗选（可同时选）；拒绝则解散该组 */
+export function doRespond(prev: GameState, responder: number, accept: boolean): GameState {
+  const s = structuredClone(prev);
+  const idx = s.sessions.findIndex((x) => x.stage === 'pending' && x.to === responder);
+  if (s.phase !== 'exchange' || idx < 0) return s;
+  const ses = s.sessions[idx];
+  const pf = s.players[ses.from];
+  const pt = s.players[ses.to];
+  if (accept) {
+    ses.stage = 'picking';
+    pushLog(s, {
+      text: `${pt.name} 接受了交换，双方各从对方手牌中暗选一张`,
+      kind: 'accept',
+      seat: ses.to,
+    });
     return s;
   }
-  return enterArrange(s);
+  s.sessions.splice(idx, 1);
+  pf.refusedMe.push(ses.to);
+  pushLog(s, {
+    text: `${pt.name} 拒绝了 ${pf.name} 的交换请求`,
+    kind: 'refuse',
+    seat: ses.to,
+  });
+  return sweep(s);
+}
+
+/** picker 从对方手牌中暗选一张（双方可同时选）。双方都选定后进入亮牌窗口 */
+export function doPick(prev: GameState, picker: number, cardId: string): GameState {
+  const s = structuredClone(prev);
+  const ses = sessionOf(s, picker);
+  if (s.phase !== 'exchange' || !ses || ses.stage !== 'picking') return s;
+  const isFrom = picker === ses.from;
+  if ((isFrom ? ses.fromPick : ses.toPick) !== null) return s;
+  const other = s.players[isFrom ? ses.to : ses.from];
+  if (!other.hand.some((c) => c.id === cardId)) return s;
+  if (isFrom) ses.fromPick = cardId;
+  else ses.toPick = cardId;
+  return s;
+}
+
+/** 亮牌窗口结束后执行互换（房主/单机驱动按会话调用，客户端只等广播） */
+export function doPickCommit(prev: GameState, from: number): GameState {
+  const s = structuredClone(prev);
+  const idx = s.sessions.findIndex(
+    (x) => x.from === from && x.stage === 'picking' && x.fromPick !== null && x.toPick !== null,
+  );
+  if (idx < 0) return s;
+  const ses = s.sessions[idx];
+  const pf = s.players[ses.from];
+  const pt = s.players[ses.to];
+  const cardFromTo = pt.hand.splice(pt.hand.findIndex((c) => c.id === ses.fromPick), 1)[0];
+  const cardFromFrom = pf.hand.splice(pf.hand.findIndex((c) => c.id === ses.toPick), 1)[0];
+  pf.hand.push(cardFromTo);
+  pt.hand.push(cardFromFrom);
+  const count = (pf.swapsWith[ses.to] ?? 0) + 1;
+  pf.swapsWith[ses.to] = count;
+  pt.swapsWith[ses.from] = count;
+  pf.hasActed = true;
+  s.sessions.splice(idx, 1);
+  pushLog(s, {
+    text: `${pf.name} 与 ${pt.name} 互换了一张牌（双方已互换 ${count}/2 次）`,
+    kind: 'swap',
+    seat: ses.from,
+    seat2: ses.to,
+  });
+  return sweep(s);
+}
+
+/** 主动结束换牌（交换中不可结束，需先完成当前交换） */
+export function doPass(prev: GameState, pid: number): GameState {
+  const s = structuredClone(prev);
+  const p = s.players[pid];
+  if (s.phase !== 'exchange' || p.passed || isBusy(s, pid)) return s;
+  p.passed = true;
+  pushLog(s, { text: `${p.name} 结束换牌`, kind: 'pass', seat: pid });
+  return sweep(s);
+}
+
+/** 掉线：座位转为 AI 控制，牌局继续 */
+export function markSeatAi(prev: GameState, pid: number): GameState {
+  const s = structuredClone(prev);
+  const p = s.players[pid];
+  if (!p.isHuman) return s;
+  p.isHuman = false;
+  pushLog(s, { text: `${p.name} 掉线，由 AI 接管`, kind: 'takeover', seat: pid });
+  return s;
 }
 
 /** 换牌结束 → 拆分阶段。特殊胜利的手牌无需拆分，自动视为已完成 */
@@ -222,130 +340,11 @@ export function doArrange(prev: GameState, pid: number, bottomIds: string[]): Ga
   return s;
 }
 
-function afterAction(s: GameState, pid: number): GameState {
-  if (!hasMoves(s, pid)) {
-    s.players[pid].passed = true;
-    return advanceTurn(s, pid);
-  }
-  s.turn = pid;
-  return s;
-}
-
-/** 与牌堆换牌：弃指定一张，从牌堆摸一张。仅限本局尚未行动时；换后本局退出与对手的换牌 */
-export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameState {
-  const s = structuredClone(prev);
-  const p = s.players[pid];
-  if (!canDeckSwap(s, pid)) return s;
-  const idx = p.hand.findIndex((c) => c.id === cardId);
-  if (idx < 0) return s;
-  p.hand.splice(idx, 1);
-  p.hand.push(s.deck.shift() as Card);
-  p.usedDeckSwap = true;
-  p.hasActed = true;
-  pushLog(s, {
-    text: `${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`,
-    kind: 'deckSwap',
-    seat: pid,
-  });
-  return afterAction(s, pid);
-}
-
-/** 发起对手交换：对方可拒绝；拒绝不消耗次数，但不能再向同一人发起 */
-export function doRequest(prev: GameState, from: number, to: number): GameState {
-  const s = structuredClone(prev);
-  if (s.pending || s.picking || !eligibleTargets(s, from).includes(to)) return s;
-  s.pending = { from, to };
-  pushLog(s, {
-    text: `${s.players[from].name} 请求与 ${s.players[to].name} 交换手牌`,
-    kind: 'request',
-    seat: from,
-    seat2: to,
-  });
-  return s;
-}
-
-/** 响应交换：接受则进入选牌阶段，双方各从对方手牌中暗选一张 */
-export function doRespond(prev: GameState, accept: boolean): GameState {
-  const s = structuredClone(prev);
-  if (!s.pending) return s;
-  const { from, to } = s.pending;
-  const pf = s.players[from];
-  const pt = s.players[to];
-  s.pending = null;
-  if (accept) {
-    s.picking = { from, to, fromPick: null, toPick: null };
-    pushLog(s, {
-      text: `${pt.name} 接受了交换，双方各从对方手牌中暗选一张`,
-      kind: 'accept',
-      seat: to,
-    });
-    return s;
-  }
-  pf.refusedMe.push(to);
-  pushLog(s, {
-    text: `${pt.name} 拒绝了 ${pf.name} 的交换请求`,
-    kind: 'refuse',
-    seat: to,
-  });
-  return afterAction(s, from);
-}
-
-/**
- * picker 从对方手牌中暗选一张。双方都选定后进入「亮牌」窗口（picking 保留、
- * 两张被选中的牌对双方可见），由驱动方稍后调用 doPickCommit 真正互换。
- */
-export function doPick(prev: GameState, picker: number, cardId: string): GameState {
-  const s = structuredClone(prev);
-  const pk = s.picking;
-  if (!pk || currentPicker(s) !== picker) return s;
-  const other = s.players[picker === pk.from ? pk.to : pk.from];
-  if (!other.hand.some((c) => c.id === cardId)) return s;
-  if (picker === pk.from) pk.fromPick = cardId;
-  else pk.toPick = cardId;
-  return s;
-}
-
-/** 亮牌窗口结束后执行互换（房主/单机驱动调用，客户端只等广播） */
-export function doPickCommit(prev: GameState): GameState {
-  const s = structuredClone(prev);
-  const pk = s.picking;
-  if (!pk || pk.fromPick === null || pk.toPick === null) return s;
-
-  const pf = s.players[pk.from];
-  const pt = s.players[pk.to];
-  const cardFromTo = pt.hand.splice(pt.hand.findIndex((c) => c.id === pk.fromPick), 1)[0];
-  const cardFromFrom = pf.hand.splice(pf.hand.findIndex((c) => c.id === pk.toPick), 1)[0];
-  pf.hand.push(cardFromTo);
-  pt.hand.push(cardFromFrom);
-  const count = (pf.swapsWith[pk.to] ?? 0) + 1;
-  pf.swapsWith[pk.to] = count;
-  pt.swapsWith[pk.from] = count;
-  pf.hasActed = true;
-  s.picking = null;
-  pushLog(s, {
-    text: `${pf.name} 与 ${pt.name} 互换了一张牌（双方已互换 ${count}/2 次）`,
-    kind: 'swap',
-    seat: pk.from,
-    seat2: pk.to,
-  });
-  return afterAction(s, pk.from);
-}
-
-export function doPass(prev: GameState, pid: number): GameState {
-  const s = structuredClone(prev);
-  s.players[pid].passed = true;
-  pushLog(s, { text: `${s.players[pid].name} 结束换牌`, kind: 'pass', seat: pid });
-  return advanceTurn(s, pid);
-}
-
-/** 掉线：座位转为 AI 控制，牌局继续 */
-export function markSeatAi(prev: GameState, pid: number): GameState {
-  const s = structuredClone(prev);
-  const p = s.players[pid];
-  if (!p.isHuman) return s;
-  p.isHuman = false;
-  pushLog(s, { text: `${p.name} 掉线，由 AI 接管`, kind: 'takeover', seat: pid });
-  return s;
+/** AI 拆分：按最优拆提交 */
+export function bestBottomIds(hand: Card[]): string[] {
+  const ev = evaluateHand(hand);
+  const bottom = ev.split ? ev.split.bottom : hand.slice(0, 3);
+  return bottom.map((c) => c.id);
 }
 
 function showdown(s: GameState): GameState {

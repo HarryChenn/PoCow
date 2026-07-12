@@ -3,6 +3,7 @@ import {
   createGame,
   doArrange,
   doPass,
+  doPick,
   doRequest,
   doRespond,
   GameState,
@@ -31,8 +32,7 @@ describe('视图脱敏 viewFor', () => {
 
   it('摊牌阶段全部揭示并附结算结果', () => {
     let s = newGame();
-    // 全员结束换牌 → 拆分 → 摊牌
-    while (s.phase === 'exchange') s = doPass(s, s.turn);
+    while (s.phase === 'exchange') s = doPass(s, s.players.find((p) => !p.passed)!.id);
     while (s.phase === 'arrange') {
       const p = s.players.find((x) => !x.arrangedDone)!;
       s = doArrange(
@@ -47,6 +47,21 @@ describe('视图脱敏 viewFor', () => {
     expect(v.result).not.toBeNull();
   });
 
+  it('会话中指向暗牌的 pick 翻译为掩码 id，指向自己牌的保持真实 id', () => {
+    let s = newGame();
+    s = doRequest(s, 0, 1);
+    s = doRespond(s, 1, true);
+    const picked = s.players[1].hand[2].id; // 0 选中 1 的第 3 张
+    s = doPick(s, 0, picked);
+
+    const vFrom = viewFor(s, 0); // 发起方看：这张牌在对方手里，是暗牌 → 掩码
+    expect(vFrom.sessions[0].fromPick).toBe('m1-2');
+    const vTo = viewFor(s, 1); // 被选方看：自己的牌 → 真实 id
+    expect(vTo.sessions[0].fromPick).toBe(picked);
+    const vThird = viewFor(s, 2); // 第三方也只见掩码
+    expect(vThird.sessions[0].fromPick).toBe('m1-2');
+  });
+
   it('他人的拆分选择在摊牌前不可见', () => {
     let s: GameState = { ...newGame(), phase: 'arrange' };
     s = doArrange(
@@ -58,59 +73,38 @@ describe('视图脱敏 viewFor', () => {
     expect(viewFor(s, 1).players[0].chosenBottom).toBeNull();
     expect(viewFor(s, 0).players[0].chosenBottom).toHaveLength(3);
   });
-
-  it('picking 中指向暗牌的 pick 翻译为掩码 id，指向自己牌的保持真实 id', () => {
-    let s = newGame();
-    const from = s.turn;
-    const to = (from + 1) % 3;
-    s = doRequest(s, from, to);
-    s = doRespond(s, true);
-    // from 选中 to 的第 2 张
-    const picked = s.players[to].hand[2].id;
-    s = { ...s, picking: { ...s.picking!, fromPick: picked } };
-
-    const vFrom = viewFor(s, from); // from 看：这张牌在 to 手里，是暗牌 → 掩码
-    expect(vFrom.picking!.fromPick).toBe(`m${to}-2`);
-    const vTo = viewFor(s, to); // to 看：自己的牌 → 真实 id
-    expect(vTo.picking!.fromPick).toBe(picked);
-  });
 });
 
 describe('动作应用 applyAction', () => {
   it('pick 按索引解析为对方真实手牌', () => {
     let s = newGame();
-    const from = s.turn;
-    const to = (from + 1) % 3;
-    s = doRequest(s, from, to);
-    s = doRespond(s, true);
-    const target = s.players[to].hand[3].id;
-    expect(resolvePickIndex(s, to, 3)).toBe(target);
-    s = applyAction(s, from, { k: 'pick', index: 3 });
-    expect(s.picking!.fromPick).toBe(target);
+    s = doRequest(s, 0, 1);
+    s = doRespond(s, 1, true);
+    const target = s.players[1].hand[3].id;
+    expect(resolvePickIndex(s, 1, 3)).toBe(target);
+    s = applyAction(s, 0, { k: 'pick', index: 3 });
+    expect(s.sessions[0].fromPick).toBe(target);
   });
 
-  it('拒绝乱序/越权动作：不轮到你、替别人响应、越界索引均无效', () => {
+  it('拒绝越权动作：替别人响应、局外选牌、越界索引均无效', () => {
     let s = newGame();
-    const notTurn = (s.turn + 1) % 3;
-    expect(applyAction(s, notTurn, { k: 'pass' }).players[notTurn].passed).toBe(false);
-    expect(applyAction(s, notTurn, { k: 'request', to: s.turn }).pending).toBeNull();
-
-    const from = s.turn;
-    const to = (from + 1) % 3;
-    s = doRequest(s, from, to);
+    s = doRequest(s, 0, 1);
     // 非被请求者不能响应
-    expect(applyAction(s, from, { k: 'respond', accept: true }).picking).toBeNull();
-    s = doRespond(s, true);
+    expect(applyAction(s, 0, { k: 'respond', accept: true }).sessions[0].stage).toBe('pending');
+    expect(applyAction(s, 2, { k: 'respond', accept: true }).sessions[0].stage).toBe('pending');
+    s = doRespond(s, 1, true);
     // 越界索引无效
-    expect(applyAction(s, from, { k: 'pick', index: 99 }).picking!.fromPick).toBeNull();
-    // 没轮到 to 选
-    expect(applyAction(s, to, { k: 'pick', index: 0 }).picking!.toPick).toBeNull();
+    expect(applyAction(s, 0, { k: 'pick', index: 99 }).sessions[0].fromPick).toBeNull();
+    // 局外人不能选牌
+    const after = applyAction(s, 2, { k: 'pick', index: 0 });
+    expect(after.sessions[0].fromPick).toBeNull();
+    expect(after.sessions[0].toPick).toBeNull();
   });
 
   it('nextRound 仅在摊牌阶段有效', () => {
     let s = newGame();
     expect(applyAction(s, 0, { k: 'nextRound' }).round).toBe(1);
-    while (s.phase === 'exchange') s = doPass(s, s.turn);
+    while (s.phase === 'exchange') s = doPass(s, s.players.find((p) => !p.passed)!.id);
     while (s.phase === 'arrange') {
       const p = s.players.find((x) => !x.arrangedDone)!;
       s = applyAction(s, p.id, {

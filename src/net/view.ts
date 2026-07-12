@@ -34,16 +34,12 @@ export function viewFor(s: GameState, seat: number): GameView {
     logSeq: s.logSeq,
     round: s.round,
     phase: s.phase,
-    turn: s.turn,
-    pending: s.pending,
-    picking: s.picking
-      ? {
-          ...s.picking,
-          // fromPick 是 from 选中的、在 to 手里的牌；toPick 在 from 手里
-          fromPick: mapPick(s.picking.fromPick, s.picking.to),
-          toPick: mapPick(s.picking.toPick, s.picking.from),
-        }
-      : null,
+    // fromPick 是 from 选中的、在 to 手里的牌；toPick 在 from 手里
+    sessions: s.sessions.map((ses) => ({
+      ...ses,
+      fromPick: mapPick(ses.fromPick, ses.to),
+      toPick: mapPick(ses.toPick, ses.from),
+    })),
     log: s.log.slice(-30),
     result: reveal ? s.result : null,
   };

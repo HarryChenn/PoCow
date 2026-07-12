@@ -837,6 +837,25 @@ body::after {
   background: rgba(242, 185, 59, 0.35);
 }
 
+.chip-busy {
+  background: rgba(111, 217, 122, 0.3);
+  animation: busy-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes busy-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.seat-busy {
+  border-color: rgba(111, 217, 122, 0.55);
+}
+
 /* ---------- 中部：牌堆 + 日志 ---------- */
 .mid-row {
   display: flex;
