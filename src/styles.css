@@ -1083,6 +1083,87 @@ body::after {
   padding: 4px 10px;
 }
 
+/* 拆分预览 */
+.arrange-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(111, 217, 122, 0.35);
+  border-radius: 12px;
+  padding: 8px 16px;
+}
+
+.arrange-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.arrange-group b {
+  font-family: var(--display-font);
+  font-size: 13px;
+  color: #6fd97a;
+  margin-right: 2px;
+}
+
+.mini-card {
+  font-family: var(--display-font);
+  font-weight: 800;
+  font-size: 14px;
+  background: #fdfbf5;
+  color: #1c2833;
+  border-radius: 5px;
+  padding: 2px 6px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.mini-red {
+  color: #cc3327;
+}
+
+.mini-joker {
+  padding: 2px 4px;
+}
+
+.mini-empty {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+.arrange-sum {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e57368;
+  margin-left: 4px;
+}
+
+.sum-niu {
+  color: #6fd97a;
+}
+
+/* 选中为底牌的角标 */
+.bottom-badge {
+  position: absolute;
+  top: -8px;
+  left: -6px;
+  z-index: 2;
+  font-family: var(--display-font);
+  font-size: 11px;
+  font-weight: 800;
+  background: #6fd97a;
+  color: #0c3818;
+  border-radius: 6px;
+  padding: 1px 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: pop-in 0.25s cubic-bezier(0.34, 1.5, 0.5, 1) both;
+}
+
 /* ---------- 弹窗 ---------- */
 .modal-overlay,
 .showdown-overlay {
@@ -1580,6 +1661,7 @@ body::after {
 
 /* 鼠标 3D 倾斜（炉石手牌手感） */
 .tilt-wrap {
+  position: relative;
   transition: transform 0.15s ease;
   will-change: transform;
 }

@@ -7,6 +7,7 @@ import {
   isBusy,
   sessionOf,
 } from '../engine/game';
+import { Card, rankLabel, SUIT_SYMBOL, totalPoints } from '../engine/cards';
 import { evaluateChosen, evaluateHand } from '../engine/scoring';
 import { PlayerAction } from '../net/protocol';
 import { CardView } from './CardView';
@@ -153,11 +154,15 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     );
   };
 
-  const autoArrange = () => {
-    const ev = evaluateHand(me.hand);
-    const bottom = ev.split ? ev.split.bottom : me.hand.slice(0, 3);
-    setBottomSel(bottom.map((c) => c.id));
-  };
+  /** 拆分预览用的迷你牌面标签 */
+  const miniCard = (c: Card) => (
+    <span
+      key={c.id}
+      className={`mini-card ${c.suit === 'H' || c.suit === 'D' ? 'mini-red' : c.suit === null ? 'mini-joker' : ''}`}
+    >
+      {c.suit === null ? '🃏' : `${rankLabel(c.rank)}${SUIT_SYMBOL[c.suit]}`}
+    </span>
+  );
 
   // 由结构化日志驱动的飘字与装饰性飞牌（本人的飞牌在交互时已播，跳过）
   const lastLogId = useRef(-1);
@@ -420,9 +425,11 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
           <span className="seat-name">
             {me.name}（分数 {fmt(me.score)}）
           </span>
-          <span className="hand-hint">
-            最佳可拆：{myEval.label} · {myEval.detail}
-          </span>
+          {state.phase === 'exchange' && (
+            <span className="hand-hint">
+              最佳可拆：{myEval.label} · {myEval.detail}
+            </span>
+          )}
         </div>
         <div className="human-cards">
           {me.hand.map((c) => (
@@ -454,6 +461,10 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   else if (mode === 'discard' && iAmFree) discardCard(c.id);
                 }}
               />
+              {state.phase === 'arrange' &&
+                (arranging ? bottomSel : (me.chosenBottom ?? [])).includes(c.id) && (
+                  <span className="bottom-badge">底</span>
+                )}
             </div>
           ))}
         </div>
@@ -464,30 +475,60 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               <span className="bar-hint">已提交拆分，等待其他玩家…</span>
             </div>
           ) : (
-            <div className="action-bar">
-              <span className="mode-hint">
-                点选 3 张作为底牌（绿框），其余 2 张为踢脚（{bottomSel.length}/3）
-              </span>
-              {bottomSel.length === 3 &&
-                (() => {
-                  const ev = evaluateChosen(me.hand, bottomSel);
-                  return (
-                    <span className="arrange-eval">
-                      {ev.label} · {ev.detail}
+            <>
+              <div className="arrange-preview">
+                <span className="arrange-group">
+                  <b>底牌</b>
+                  {me.hand.filter((c) => bottomSel.includes(c.id)).map(miniCard)}
+                  {Array.from({ length: 3 - bottomSel.length }).map((_, i) => (
+                    <span key={`slot-${i}`} className="mini-card mini-empty">
+                      ？
                     </span>
-                  );
-                })()}
-              <button className="btn" onClick={autoArrange}>
-                自动
-              </button>
-              <button
-                className="btn btn-primary"
-                disabled={bottomSel.length !== 3}
-                onClick={() => onAction({ k: 'arrange', bottomIds: bottomSel })}
-              >
-                确认拆分
-              </button>
-            </div>
+                  ))}
+                  {bottomSel.length > 0 &&
+                    (() => {
+                      const bottom = me.hand.filter((c) => bottomSel.includes(c.id));
+                      const sum = totalPoints(bottom);
+                      const niu = bottomSel.length === 3 && sum % 10 === 0;
+                      return (
+                        <span className={`arrange-sum ${niu ? 'sum-niu' : ''}`}>
+                          和 {sum}
+                          {bottomSel.length === 3 && (niu ? ' ✓ 成牛' : ' ✗ 无牛')}
+                        </span>
+                      );
+                    })()}
+                </span>
+                <span className="arrange-group">
+                  <b>踢脚</b>
+                  {bottomSel.length === 3 ? (
+                    me.hand.filter((c) => !bottomSel.includes(c.id)).map(miniCard)
+                  ) : (
+                    <span className="mini-card mini-empty">…</span>
+                  )}
+                </span>
+                {bottomSel.length === 3 &&
+                  (() => {
+                    const ev = evaluateChosen(me.hand, bottomSel);
+                    return (
+                      <span className="arrange-eval">
+                        {ev.label} · {ev.detail}
+                      </span>
+                    );
+                  })()}
+              </div>
+              <div className="action-bar">
+                <span className="mode-hint">
+                  点选 3 张作为底牌（{bottomSel.length}/3），其余 2 张为踢脚
+                </span>
+                <button
+                  className="btn btn-primary"
+                  disabled={bottomSel.length !== 3}
+                  onClick={() => onAction({ k: 'arrange', bottomIds: bottomSel })}
+                >
+                  确认拆分
+                </button>
+              </div>
+            </>
           ))}
 
         {iAmPicking && myPartnerId !== null && (
