@@ -16,7 +16,7 @@ import { aiChooseAction, aiPickFromOpponent, aiRespond } from '../engine/ai';
 const AI_DELAY = 550;
 const PICK_DELAY = 400;
 /** 双方选定后的亮牌窗口：高亮 + 飞牌动画播完再互换 */
-const REVEAL_DELAY = 1000;
+const REVEAL_DELAY = 1400;
 
 function jitter(base: number): number {
   return base + Math.random() * 350;

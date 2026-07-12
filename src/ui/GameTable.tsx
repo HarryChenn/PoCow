@@ -15,9 +15,11 @@ import { ShowdownPanel } from './ShowdownPanel';
 import { RulesModal } from './RulesModal';
 import { burst, burstGold, burstGreen, shake } from './effects';
 
-const FLIGHT_MS = 600;
+const FLIGHT_MS = 900;
 const CARD_W = 44;
 const CARD_H = 62;
+/** 新到手的牌高亮时长 */
+const FRESH_MS = 2200;
 
 interface Flight {
   key: string;
@@ -79,6 +81,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   const [busy, setBusy] = useState(false);
   /** 拆分阶段：当前点选为底牌的 3 张 */
   const [bottomSel, setBottomSel] = useState<string[]>([]);
+  /** 刚换到手的牌（落地后高亮几秒，看清换来的是什么） */
+  const [freshIds, setFreshIds] = useState<string[]>([]);
 
   const me = state.players[myId];
   const opponents = [...state.players.slice(myId + 1), ...state.players.slice(0, myId)];
@@ -241,6 +245,20 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.sessions]);
+
+  // 手牌出现新牌（换牌堆/互换到手）→ 高亮提示
+  const prevHandIds = useRef<{ round: number; ids: string[] }>({ round: 0, ids: [] });
+  useEffect(() => {
+    const ids = me.hand.map((c) => c.id);
+    const prev = prevHandIds.current;
+    prevHandIds.current = { round: state.round, ids };
+    if (prev.round !== state.round || state.phase !== 'exchange') return;
+    const fresh = ids.filter((id) => !prev.ids.includes(id));
+    if (fresh.length === 0) return;
+    setFreshIds((f) => [...f, ...fresh]);
+    setTimeout(() => setFreshIds((f) => f.filter((id) => !fresh.includes(id))), FRESH_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.hand.map((c) => c.id).join(',')]);
 
   const discardCard = (cardId: string) => {
     if (busy) return;
@@ -429,6 +447,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               <CardView
                 card={c}
                 dataId={c.id}
+                fresh={freshIds.includes(c.id)}
                 picked={
                   isPicked(c.id) ||
                   (arranging && bottomSel.includes(c.id)) ||

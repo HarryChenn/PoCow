@@ -7,17 +7,20 @@ interface Props {
   selectable?: boolean;
   /** 被选中待交换的高亮 */
   picked?: boolean;
+  /** 刚换到手的新牌高亮 */
+  fresh?: boolean;
   /** 用于交换动画定位 */
   dataId?: string;
   onClick?: () => void;
 }
 
-export function CardView({ card, hidden, small, selectable, picked, dataId, onClick }: Props) {
+export function CardView({ card, hidden, small, selectable, picked, fresh, dataId, onClick }: Props) {
   const cls = [
     'card',
     small ? 'card-sm' : '',
     selectable ? 'selectable' : '',
     picked ? 'picked' : '',
+    fresh ? 'card-fresh' : '',
   ];
   if (hidden || !card) {
     return (
