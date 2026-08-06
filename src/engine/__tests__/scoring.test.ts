@@ -126,6 +126,21 @@ describe('普通 3+2 牛牌', () => {
     expect(ev.payout).toBe(7);
   });
 
+  it('三条直接成牛（点数和非 10 的倍数）：5,5,5 底 ×3，踢脚 3+4 → 2×3=6', () => {
+    const ev = evaluateHand([c(5, 'S'), c(5, 'H'), c(5, 'D'), c(3, 'C'), c(4, 'H')]);
+    expect(ev.kind).toBe('niu');
+    expect(ev.power).toBe(2);
+    expect(ev.payout).toBe(6);
+    expect(ev.split!.bottom.map((x) => x.rank)).toEqual([5, 5, 5]);
+  });
+
+  it('三条 A（和 3）也成牛，踢脚 4+6 牛牛 → 5×3=15', () => {
+    const ev = evaluateHand([c(1, 'S'), c(1, 'H'), c(1, 'D'), c(4, 'C'), c(6, 'H')]);
+    expect(ev.kind).toBe('niu');
+    expect(ev.power).toBe(5);
+    expect(ev.payout).toBe(15);
+  });
+
   it('无牛：power 0、payout 1', () => {
     const ev = evaluateHand([c(1, 'S'), c(3, 'H'), c(5, 'D'), c(7, 'C'), c(9, 'H')]);
     expect(ev.kind).toBe('none');
@@ -146,6 +161,15 @@ describe('手动拆分 evaluateChosen', () => {
     expect(bad.power).toBe(0);
     expect(bad.payout).toBe(1);
     expect(bad.split!.bottom.map((x) => x.id)).toEqual([hand[0].id, hand[1].id, hand[3].id]);
+  });
+
+  it('手选三条作底：直接成牛并吃 ×3', () => {
+    const hand = [c(8, 'S'), c(8, 'H'), c(8, 'D'), c(4, 'C'), c(6, 'H')];
+    const ev = evaluateChosen(hand, [hand[0].id, hand[1].id, hand[2].id]);
+    expect(ev.kind).toBe('niu');
+    expect(ev.power).toBe(5); // 踢脚 4+6 牛牛
+    expect(ev.payout).toBe(15);
+    expect(ev.detail).toContain('三条');
   });
 
   it('特殊胜利无视拆分选择', () => {

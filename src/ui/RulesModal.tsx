@@ -42,7 +42,7 @@ export function RulesModal({ onClose }: Props) {
             ；特殊胜利无需拆分、自动生效。
           </p>
 
-          <h4>底牌倍率（3 张点数和为 10 的倍数即成牛）</h4>
+          <h4>底牌倍率（3 张点数和为 10 的倍数即成牛，三条直接成牛）</h4>
           <table className="rules-table">
             <tbody>
               <tr>
@@ -54,7 +54,7 @@ export function RulesModal({ onClose }: Props) {
                 <td>×2</td>
               </tr>
               <tr>
-                <td>三条</td>
+                <td>三条（点数和无需凑 10 的倍数，直接成牛）</td>
                 <td>×3</td>
               </tr>
               <tr>

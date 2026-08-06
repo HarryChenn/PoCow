@@ -8,7 +8,7 @@ import {
   sessionOf,
 } from '../engine/game';
 import { Card, rankLabel, SUIT_SYMBOL, totalPoints } from '../engine/cards';
-import { evaluateChosen, evaluateHand } from '../engine/scoring';
+import { evaluateChosen, evaluateHand, isNiuBottom } from '../engine/scoring';
 import { PlayerAction } from '../net/protocol';
 import { CardView } from './CardView';
 import { ShowdownPanel } from './ShowdownPanel';
@@ -483,7 +483,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                     (() => {
                       const bottom = me.hand.filter((c) => bottomSel.includes(c.id));
                       const sum = totalPoints(bottom);
-                      const niu = bottomSel.length === 3 && sum % 10 === 0;
+                      const niu = isNiuBottom(bottom);
                       return (
                         <span className={`arrange-sum ${niu ? 'sum-niu' : ''}`}>
                           和 {sum}

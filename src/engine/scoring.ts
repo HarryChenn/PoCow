@@ -16,6 +16,15 @@ export function isTrips(cards: Card[]): boolean {
   return cards.length === 3 && cards.every((c) => c.rank === cards[0].rank);
 }
 
+/**
+ * 底牌成牛：点数和为 10 的倍数，或本身是三条。
+ * 三条单独成牛——否则 3×点数 只有点数为 10 时才是 10 的倍数，
+ * A~9 的三条永远无牛，规则表里的三条 ×3 对它们形同虚设。
+ */
+export function isNiuBottom(cards: Card[]): boolean {
+  return cards.length === 3 && (totalPoints(cards) % 10 === 0 || isTrips(cards));
+}
+
 export function hasBothJokers(cards: Card[]): boolean {
   return cards.filter(isJoker).length === 2;
 }
@@ -144,7 +153,7 @@ export function evaluateChosen(cards: Card[], chosenBottom: string[] | null): Ha
   const kicker = cards.filter((c) => !chosenBottom.includes(c.id));
   if (bottom.length !== 3) return evaluateHand(cards);
 
-  if (totalPoints(bottom) % 10 !== 0) {
+  if (!isNiuBottom(bottom)) {
     return { ...NONE_EVAL, split: { bottom, kicker } };
   }
   const k = evalKicker(kicker);
@@ -186,7 +195,7 @@ export function evaluateHand(cards: Card[]): HandEval {
 
   let best: { split: Split; kicker: KickerEval; bonus: BonusEval; payout: number } | null = null;
   for (const bottom of combinations(cards, 3)) {
-    if (totalPoints(bottom) % 10 !== 0) continue;
+    if (!isNiuBottom(bottom)) continue;
     const kickerCards = cards.filter((c) => !bottom.includes(c));
     const kicker = evalKicker(kickerCards);
     const bonus = bonusOf3(bottom);
