@@ -64,10 +64,14 @@ export function RulesModal({ onClose }: Props) {
               ['rules.bonus.flush', '×2'],
               ['rules.bonus.straight', '×2'],
               ['rules.bonus.trips', '×3'],
-              ['rules.bonus.jokerBomb', '×3'],
             ]}
           />
           <p className="rules-note">{t('rules.bonusNote')}</p>
+
+          <h4>{t('rules.h.handBonus')}</h4>
+          <p>
+            <Rich k="rules.handBonus" />
+          </p>
 
           <h4>{t('rules.h.kicker')}</h4>
           <Table

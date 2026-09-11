@@ -38,8 +38,9 @@ export interface BonusEval {
 }
 
 /**
- * 3 张牌的底牌加成：同花 2×、顺子 2×、三条 3×、王炸 3×。
+ * 3 张牌的底牌加成：同花 2×、顺子 2×、三条 3×。
  * 同一组 3 张同时满足多个加成时相乘（如 3 张同花顺 = 4×）。
+ * 王炸不在此列——它是手牌级加成，见 handBonus()。
  */
 export function bonusOf3(cards: Card[]): BonusEval {
   let mult = 1;
@@ -47,10 +48,6 @@ export function bonusOf3(cards: Card[]): BonusEval {
   if (isTrips(cards)) {
     mult *= 3;
     tags.push('trips');
-  }
-  if (hasBothJokers(cards)) {
-    mult *= 3;
-    tags.push('jokerBomb');
   }
   if (isFlush(cards)) {
     mult *= 2;
@@ -61,6 +58,18 @@ export function bonusOf3(cards: Card[]): BonusEval {
     tags.push('straight');
   }
   return { mult, tags };
+}
+
+/** 无牛获胜的基础赔分 */
+const NO_NIU_PAYOUT = 1;
+
+/**
+ * 手牌级加成：5 张里有双王即 ×3，不论两张王在底牌还是踢脚。
+ * 与底牌倍率相乘叠加，无牛时同样作用在基础赔分上。
+ * （王炸只有 2 张，本身不成底牌，也不赋予成牛资格——底牌仍需第三张凑成牛。）
+ */
+export function handBonus(cards: Card[]): BonusEval {
+  return hasBothJokers(cards) ? { mult: 3, tags: ['jokerBomb'] } : { mult: 1, tags: [] };
 }
 
 /** 特殊胜利的种类 */
@@ -132,13 +141,16 @@ export interface Split {
 
 /** 牌力明细的结构化数据（UI 渲染成「牌力 A × 倍率 B（…）= C 分」） */
 export interface EvalDetail {
-  /** 牌力基数；特殊胜利为各基数之和 */
+  /** 牌力基数；特殊胜利为各基数之和；无牛为 0 */
   base: number;
   /** 同时满足多个特殊胜利时的各项基数，用于显示 (8+9) */
   parts?: number[];
+  /** 最终倍率 = 底牌倍率 × 手牌倍率 */
   mult: number;
   tags: BonusTag[];
   payout: number;
+  /** 无牛：牌力为 0，赔分自基础 1 起算，文案另行渲染 */
+  noNiu?: boolean;
 }
 
 export interface HandEval {
@@ -148,20 +160,25 @@ export interface HandEval {
   /** 结算赔率（无牛获胜按 1×） */
   payout: number;
   label: HandLabel;
-  /** 无牛为 null（UI 显示固定文案） */
-  detail: EvalDetail | null;
+  detail: EvalDetail;
   split: Split | null;
   specials: SpecialWin[];
 }
 
-const NONE_EVAL = {
-  kind: 'none' as const,
-  power: 0,
-  payout: 1,
-  label: { k: 'none' } as HandLabel,
-  detail: null,
-  specials: [] as SpecialWin[],
-};
+/** 无牛：牌力 0，赔分 = 基础 1 × 手牌倍率（有王炸则 3 分） */
+function noneEval(hand: Card[], split: Split | null): HandEval {
+  const hb = handBonus(hand);
+  const payout = NO_NIU_PAYOUT * hb.mult;
+  return {
+    kind: 'none',
+    power: 0,
+    payout,
+    label: { k: 'none' },
+    detail: { base: 0, mult: hb.mult, tags: hb.tags, payout, noNiu: true },
+    split,
+    specials: [],
+  };
+}
 
 /**
  * 按玩家自选的 3 张底牌评牌（拆分阶段的结果）：
@@ -175,17 +192,19 @@ export function evaluateChosen(cards: Card[], chosenBottom: string[] | null): Ha
   if (bottom.length !== 3) return evaluateHand(cards);
 
   if (!isNiuBottom(bottom)) {
-    return { ...NONE_EVAL, split: { bottom, kicker } };
+    return noneEval(cards, { bottom, kicker });
   }
   const k = evalKicker(kicker);
   const bonus = bonusOf3(bottom);
-  const payout = k.base * bonus.mult;
+  const hb = handBonus(cards);
+  const mult = bonus.mult * hb.mult;
+  const payout = k.base * mult;
   return {
     kind: 'niu',
     power: k.base,
     payout,
     label: k.label,
-    detail: { base: k.base, mult: bonus.mult, tags: bonus.tags, payout },
+    detail: { base: k.base, mult, tags: [...bonus.tags, ...hb.tags], payout },
     split: { bottom, kicker },
     specials: [],
   };
@@ -197,7 +216,9 @@ export function evaluateHand(cards: Card[]): HandEval {
     const baseSum = specials.reduce((s, x) => s + x.base, 0);
     const maxBase = Math.max(...specials.map((x) => x.base));
     const bonus = bestBonusSubset(cards);
-    const payout = baseSum * bonus.mult;
+    const hb = handBonus(cards);
+    const mult = bonus.mult * hb.mult;
+    const payout = baseSum * mult;
     return {
       kind: 'special',
       power: 100 + maxBase,
@@ -206,8 +227,8 @@ export function evaluateHand(cards: Card[]): HandEval {
       detail: {
         base: baseSum,
         parts: specials.length > 1 ? specials.map((s) => s.base) : undefined,
-        mult: bonus.mult,
-        tags: bonus.tags,
+        mult,
+        tags: [...bonus.tags, ...hb.tags],
         payout,
       },
       split: null,
@@ -232,21 +253,24 @@ export function evaluateHand(cards: Card[]): HandEval {
   }
 
   if (best) {
+    const hb = handBonus(cards);
+    const mult = best.bonus.mult * hb.mult;
+    const payout = best.kicker.base * mult;
     return {
       kind: 'niu',
       power: best.kicker.base,
-      payout: best.payout,
+      payout,
       label: best.kicker.label,
       detail: {
         base: best.kicker.base,
-        mult: best.bonus.mult,
-        tags: best.bonus.tags,
-        payout: best.payout,
+        mult,
+        tags: [...best.bonus.tags, ...hb.tags],
+        payout,
       },
       split: best.split,
       specials: [],
     };
   }
 
-  return { ...NONE_EVAL, split: null };
+  return noneEval(cards, null);
 }

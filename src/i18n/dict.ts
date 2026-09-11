@@ -127,6 +127,7 @@ export const en = {
   'unit.pt': 'pt',
   'unit.pts': 'pts',
   'detail.none': 'Power 0 (wins pay 1 pt)',
+  'detail.noneMult': 'Power 0 · wins pay 1 × Mult {mult} ({tags}) = {payout} {unit}',
 
   // 战报
   'log.round': '—— Round {n} begins · free swapping ——',
@@ -167,8 +168,9 @@ export const en = {
   'rules.bonus.flush': 'Flush',
   'rules.bonus.straight': 'Straight (Q+K+Joker counts)',
   'rules.bonus.trips': 'Trips (always a niu, no need to sum to a multiple of 10)',
-  'rules.bonus.jokerBomb': 'Joker Bomb (both Jokers)',
   'rules.bonusNote': 'Bonuses on the same 3 cards multiply together (3-card straight flush = ×4).',
+  'rules.h.handBonus': 'Hand bonus — Joker Bomb',
+  'rules.handBonus': 'Holding **both Jokers** multiplies your final payout by **×3**, wherever they sit. It **stacks** with the bottom multiplier (flush bottom + both Jokers in the kicker = ×2 × 3 = ×6) and applies even with no niu (a no-niu win pays 1 × 3 = 3). A Joker Bomb is only 2 cards, so it is never a bottom on its own: to use it in the bottom you still need a third card that brings the bottom to a multiple of 10.',
   'rules.h.kicker': 'Kicker power (units digit of the 2-card sum)',
   'rules.kicker.1to6': '1 – 6',
   'rules.kicker.789': '7 / 8 / 9',
@@ -308,6 +310,7 @@ export const zh: Record<Key, string> = {
   'unit.pt': '分',
   'unit.pts': '分',
   'detail.none': '牌力 0（若胜按 1 分结算）',
+  'detail.noneMult': '牌力 0 · 若胜按 1 × 倍率 {mult}（{tags}）= {payout} {unit}结算',
 
   'log.round': '—— 第 {n} 局开始，自由换牌 ——',
   'log.deckSwap': '{name} 与牌堆换了一张牌（本局退出与对手的换牌）',
@@ -345,8 +348,9 @@ export const zh: Record<Key, string> = {
   'rules.bonus.flush': '同花',
   'rules.bonus.straight': '顺子（Q+K+Joker 视为顺子）',
   'rules.bonus.trips': '三条（点数和无需凑 10 的倍数，直接成牛）',
-  'rules.bonus.jokerBomb': '王炸（双 Joker）',
   'rules.bonusNote': '同一组 3 张同时满足多个加成时相乘（3 张同花顺 = ×4）。',
+  'rules.h.handBonus': '手牌加成 —— 王炸',
+  'rules.handBonus': '手里有**双王**，最终赔分 **×3**，不论两张王在底牌还是踢脚。与底牌倍率**相乘叠加**（底牌同花 ×2、双王在踢脚 = ×2 × 3 = ×6）；无牛也生效（无牛获胜赔 1 × 3 = 3 分）。王炸本身只有 2 张，不能当底牌用：要把它放进底牌，仍需第三张把点数和凑成 10 的倍数。',
   'rules.h.kicker': '踢脚牌力（2 张点数和取个位）',
   'rules.kicker.1to6': '1 ～ 6',
   'rules.kicker.789': '7 / 8 / 9',

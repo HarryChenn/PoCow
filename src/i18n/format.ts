@@ -29,15 +29,21 @@ export function labelText(t: TFn, label: HandLabel): string {
 }
 
 /** 牌力明细 → 「牌力 A × 倍率 B（…）= C 分」 */
-export function detailText(t: TFn, detail: EvalDetail | null): string {
-  if (!detail) return t('detail.none');
-  const base = detail.parts ? `(${detail.parts.join('+')})` : String(detail.base);
+export function detailText(t: TFn, detail: EvalDetail): string {
+  const tags = () => detail.tags.map((x) => t(`bonus.${x}` as Key)).join(t('join.tags'));
   const u = unit(t, detail.payout);
+  if (detail.noNiu) {
+    // 无牛：牌力 0，赔分自基础 1 起算；有王炸时仍吃手牌倍率
+    return detail.mult <= 1
+      ? t('detail.none')
+      : t('detail.noneMult', { mult: detail.mult, tags: tags(), payout: detail.payout, unit: u });
+  }
+  const base = detail.parts ? `(${detail.parts.join('+')})` : String(detail.base);
   if (detail.mult <= 1) return t('detail.plain', { base, payout: detail.payout, unit: u });
   return t('detail.withMult', {
     base,
     mult: detail.mult,
-    tags: detail.tags.map((x) => t(`bonus.${x}` as Key)).join(t('join.tags')),
+    tags: tags(),
     payout: detail.payout,
     unit: u,
   });

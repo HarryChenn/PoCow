@@ -44,11 +44,22 @@ Your 5 cards split into a 3-card **bottom** (sets the multiplier) and a 2-card *
 | Flush | ×2 |
 | Straight (Q+K+Joker counts as one) | ×2 |
 | Trips (**always a niu**, no need to sum to a multiple of 10) | ×3 |
-| Joker Bomb (both Jokers) | ×3 |
 
 Bonuses on the same 3 cards multiply together (a 3-card straight flush = ×4).
 
 Trips are a niu on their own: otherwise 3 × rank is only a multiple of 10 when the rank counts 10, so trips of A–9 could never make a niu and could never collect the ×3.
+
+**Hand bonus — Joker Bomb**
+
+Holding **both Jokers** multiplies your final payout by **×3**, wherever they sit — bottom or kicker. It **stacks** with the bottom multiplier, and it applies even with no niu:
+
+| Hand | Payout |
+| --- | --- |
+| Flush bottom (×2) + both Jokers in the kicker (power 7) | 7 × 2 × 3 = 42 |
+| Both Jokers + K as bottom (sum 30), kicker 4+6 (power 5) | 5 × 3 = 15 |
+| No niu, but holding both Jokers | 1 × 3 = 3 |
+
+A Joker Bomb is only 2 cards, so it is never a bottom on its own: to use it in the bottom you still need a third card that brings the bottom to a multiple of 10 (only a 10-point card does that).
 
 **Kicker power** (units digit of the 2-card sum)
 
@@ -76,6 +87,7 @@ A special win pays special power × bottom multiplier:
   - A five-card straight contains a 3-card straight → 8×2 = 16
   - A bomb contains trips → 12×3 = 36
   - A straight flush → (8+9)×2×2 = **68**
+- The Joker Bomb ×3 is a hand bonus, so it multiplies on top of the subset multiplier (all face cards with both Jokers → 10 × 2 × 3 = 60).
 
 ### Comparing and Scoring
 

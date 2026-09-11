@@ -4,10 +4,11 @@ import { translate } from '../index';
 import { detailText, labelText, logText } from '../format';
 import { LogEntry } from '../../engine/game';
 import { evaluateHand } from '../../engine/scoring';
-import { Card, Suit } from '../../engine/cards';
+import { Card, JOKER_RANK, Suit } from '../../engine/cards';
 
 let seq = 0;
 const c = (rank: number, suit: Suit | null = 'S'): Card => ({ id: `t${seq++}`, rank, suit });
+const joker = (): Card => ({ id: `t${seq++}`, rank: JOKER_RANK, suit: null });
 
 describe('文案字典', () => {
   it('中英文键完全一致，且无空串', () => {
@@ -68,6 +69,19 @@ describe('结构化数据按语言渲染', () => {
     const ev = evaluateHand([c(1, 'S'), c(3, 'H'), c(5, 'D'), c(7, 'C'), c(9, 'H')]);
     expect(detailText(t('zh'), ev.detail)).toBe('牌力 0（若胜按 1 分结算）');
     expect(detailText(t('en'), ev.detail)).toBe('Power 0 (wins pay 1 pt)');
+  });
+
+  it('无牛 + 王炸：文案要说明 1 × 3 = 3', () => {
+    const ev = evaluateHand([joker(), joker(), c(2, 'S'), c(5, 'H'), c(7, 'D')]);
+    expect(ev.payout).toBe(3);
+    expect(detailText(t('zh'), ev.detail)).toBe('牌力 0 · 若胜按 1 × 倍率 3（王炸）= 3 分结算');
+    expect(detailText(t('en'), ev.detail)).toBe('Power 0 · wins pay 1 × Mult 3 (Joker Bomb) = 3 pts');
+  });
+
+  it('王炸叠底牌倍率：同花 ×2 × 王炸 ×3 = ×6', () => {
+    const ev = evaluateHand([c(2, 'S'), c(3, 'S'), c(5, 'S'), joker(), joker()]);
+    expect(detailText(t('zh'), ev.detail)).toBe('牌力 7 × 倍率 6（同花·王炸）= 42 分');
+    expect(detailText(t('en'), ev.detail)).toBe('Power 7 × Mult 6 (Flush · Joker Bomb) = 42 pts');
   });
 
   it('战报按座位解析昵称，两种语言各自渲染', () => {

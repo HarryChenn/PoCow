@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Card, JOKER_RANK, Suit } from '../cards';
-import { bonusOf3, evalKicker, evalSpecials, evaluateChosen, evaluateHand } from '../scoring';
+import {
+  bonusOf3,
+  evalKicker,
+  evalSpecials,
+  evaluateChosen,
+  evaluateHand,
+  handBonus,
+} from '../scoring';
 
 let seq = 0;
 function c(rank: number, suit: Suit | null = 'S'): Card {
@@ -17,8 +24,9 @@ describe('底牌加成 bonusOf3', () => {
     expect(b.tags).toEqual(['straight']);
   });
 
-  it('王炸（双 Joker 在底牌）×3', () => {
-    expect(bonusOf3([joker(), joker(), c(13)]).mult).toBe(3);
+  it('王炸不是底牌加成（改为手牌级，见下方 handBonus）', () => {
+    expect(bonusOf3([joker(), joker(), c(13)]).mult).toBe(1);
+    expect(bonusOf3([joker(), joker(), c(13)]).tags).toEqual([]);
   });
 
   it('三条 ×3', () => {
@@ -79,10 +87,12 @@ describe('特殊胜利', () => {
     expect(ev.power).toBe(112);
   });
 
-  it('五花 10×，含王炸子集 → 30×', () => {
+  it('五花 10×，JQK 自带顺 ×2、手牌王炸 ×3 → 60×', () => {
     const ev = evaluateHand([c(11, 'S'), c(12, 'S'), c(13, 'H'), joker(), joker()]);
     expect(ev.specials).toEqual([{ name: 'allFace', base: 10 }]);
-    expect(ev.payout).toBe(30);
+    expect(ev.detail.mult).toBe(6);
+    expect(ev.detail.tags).toEqual(['straight', 'jokerBomb']);
+    expect(ev.payout).toBe(60);
   });
 
   it('十小 11×，自带 A-2-3 顺 → 22×', () => {
@@ -141,6 +151,47 @@ describe('普通 3+2 牛牌', () => {
     expect(ev.payout).toBe(15);
   });
 
+  it('王炸手牌级 ×3：踢脚双王也算，与底牌倍率相乘', () => {
+    // 底 2♠3♠5♠ = 10 成牛且同花 ×2，踢脚双王 → 牌力 7，倍率 2×3=6
+    const ev = evaluateHand([c(2, 'S'), c(3, 'S'), c(5, 'S'), joker(), joker()]);
+    expect(ev.kind).toBe('niu');
+    expect(ev.power).toBe(7);
+    expect(ev.detail.mult).toBe(6);
+    expect(ev.detail.tags).toEqual(['flush', 'jokerBomb']);
+    expect(ev.payout).toBe(42);
+  });
+
+  it('王炸在底牌：仍需第三张凑成牛，成牛后同样吃 ×3', () => {
+    expect(handBonus([joker(), joker(), c(13), c(2), c(3)]).mult).toBe(3);
+    // 手选双王+K 作底 = 30 成牛，踢脚 4+6 牛牛 → 5 × 3 = 15
+    const hand = [joker(), joker(), c(13, 'S'), c(4, 'C'), c(6, 'H')];
+    const ok = evaluateChosen(hand, [hand[0].id, hand[1].id, hand[2].id]);
+    expect(ok.kind).toBe('niu');
+    expect(ok.payout).toBe(15);
+    // 第三张换成 2：双王+2 = 22 不成牛，王炸不赋予成牛资格
+    const bad = [joker(), joker(), c(2, 'S'), c(4, 'C'), c(6, 'H')];
+    const no = evaluateChosen(bad, [bad[0].id, bad[1].id, bad[2].id]);
+    expect(no.kind).toBe('none');
+    expect(no.payout).toBe(3); // 无牛，但王炸 ×3 仍作用于基础赔分
+  });
+
+  it('自动拆分会为牌力把双王留在踢脚（对子 7 > 牛牛 5）', () => {
+    // 双王+K=30 成牛走牛牛(5)，K+4+6=20 成牛走双王对子(7)：引擎取后者
+    const ev = evaluateHand([joker(), joker(), c(13, 'S'), c(4, 'C'), c(6, 'H')]);
+    expect(ev.power).toBe(7);
+    expect(ev.split!.bottom.some((x) => x.suit === null)).toBe(false);
+    expect(ev.payout).toBe(21); // 7 × 底牌 1 × 王炸 3
+  });
+
+  it('无牛但有王炸：赔分 1 × 3 = 3', () => {
+    const ev = evaluateHand([joker(), joker(), c(2, 'S'), c(5, 'H'), c(7, 'D')]);
+    expect(ev.kind).toBe('none');
+    expect(ev.power).toBe(0);
+    expect(ev.payout).toBe(3);
+    expect(ev.detail.noNiu).toBe(true);
+    expect(ev.detail.tags).toEqual(['jokerBomb']);
+  });
+
   it('无牛：power 0、payout 1', () => {
     const ev = evaluateHand([c(1, 'S'), c(3, 'H'), c(5, 'D'), c(7, 'C'), c(9, 'H')]);
     expect(ev.kind).toBe('none');
@@ -169,7 +220,7 @@ describe('手动拆分 evaluateChosen', () => {
     expect(ev.kind).toBe('niu');
     expect(ev.power).toBe(5); // 踢脚 4+6 牛牛
     expect(ev.payout).toBe(15);
-    expect(ev.detail!.tags).toContain('trips');
+    expect(ev.detail.tags).toContain('trips');
   });
 
   it('特殊胜利无视拆分选择', () => {
