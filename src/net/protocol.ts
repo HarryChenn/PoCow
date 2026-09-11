@@ -1,4 +1,8 @@
 import { GameState } from '../engine/game';
+import { Key } from '../i18n/dict';
+
+/** 联机提示用文案键：跨网络传键而非文案，收到的一方按自己的语言渲染 */
+export type NetMsgKey = Extract<Key, `net.${string}`>;
 
 /** 玩家动作（客户端 → 房主；本地模式也用同一套） */
 export type PlayerAction =
@@ -36,5 +40,5 @@ export type HostMsg =
   | { t: 'welcome'; seat: number }
   | { t: 'lobby'; lobby: LobbyView }
   | { t: 'state'; seat: number; view: GameView }
-  | { t: 'error'; msg: string }
-  | { t: 'roomClosed'; msg: string };
+  | { t: 'error'; msg: NetMsgKey }
+  | { t: 'roomClosed'; msg: NetMsgKey };

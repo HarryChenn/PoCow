@@ -2,6 +2,8 @@ import { CSSProperties } from 'react';
 import { Card } from '../engine/cards';
 import { GameStateLike } from '../engine/game';
 import { CardView } from './CardView';
+import { useI18n } from '../i18n';
+import { detailText, labelText } from '../i18n/format';
 
 interface Props {
   state: GameStateLike;
@@ -37,13 +39,14 @@ function FlipCard({ card, delay }: { card: Card; delay: number }) {
 }
 
 export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabel, onExit }: Props) {
+  const { t } = useI18n();
   const result = state.result!;
   const winDelay = BASE + state.players.length * ROW_STEP + 0.25;
 
   return (
     <div className="showdown-overlay">
       <div className="showdown-panel">
-        <h2>第 {state.round} 局 · 摊牌</h2>
+        <h2>{t('showdown.title', { n: state.round })}</h2>
         <div className="showdown-rows">
           {state.players.map((p, idx) => {
             const ev = result.evals[p.id];
@@ -69,7 +72,7 @@ export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabe
                     </span>
                   )}
                   {p.name}
-                  {p.id === myId ? '（你）' : ''}
+                  {p.id === myId ? t('showdown.you') : ''}
                 </div>
                 <div className="showdown-cards">
                   {ev.split ? (
@@ -97,8 +100,8 @@ export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabe
                   className="showdown-eval pop-in"
                   style={{ animationDelay: `${rowDelay + 0.55}s` }}
                 >
-                  <div className="eval-label">{ev.label}</div>
-                  <div className="eval-detail">{ev.detail}</div>
+                  <div className="eval-label">{labelText(t, ev.label)}</div>
+                  <div className="eval-detail">{detailText(t, ev.detail)}</div>
                 </div>
                 <div
                   className={`showdown-delta ${delta >= 0 ? 'plus' : 'minus'} pop-in`}
@@ -110,7 +113,7 @@ export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabe
                   className="showdown-score pop-in"
                   style={{ animationDelay: `${winDelay + 0.15}s` }}
                 >
-                  总分 {fmt(p.score)}
+                  {t('showdown.total', { n: fmt(p.score) })}
                 </div>
               </div>
             );
@@ -119,10 +122,10 @@ export function ShowdownPanel({ state, myId, canNextRound, onNextRound, exitLabe
         <div className="showdown-actions pop-in" style={{ animationDelay: `${winDelay + 0.4}s` }}>
           {canNextRound ? (
             <button className="btn btn-primary" onClick={onNextRound}>
-              下一局
+              {t('showdown.next')}
             </button>
           ) : (
-            <span className="waiting-host">等待房主开始下一局…</span>
+            <span className="waiting-host">{t('showdown.waitHost')}</span>
           )}
           <button className="btn" onClick={onExit}>
             {exitLabel}

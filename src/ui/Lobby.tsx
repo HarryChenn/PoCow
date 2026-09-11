@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { LobbyView } from '../net/protocol';
+import { LangSwitch, useI18n } from '../i18n';
+import { Key } from '../i18n/dict';
 
 interface Props {
   lobby: LobbyView;
@@ -12,9 +14,8 @@ interface Props {
   leaveLabel: string;
 }
 
-const KIND_LABEL = { host: '房主', remote: '玩家', ai: 'AI' } as const;
-
 export function Lobby({ lobby, isHost, onAddAi, onRemove, onStart, onLeave, leaveLabel }: Props) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const copyCode = async () => {
@@ -29,39 +30,40 @@ export function Lobby({ lobby, isHost, onAddAi, onRemove, onStart, onLeave, leav
 
   return (
     <div className="setup-screen">
-      <h1 className="game-title lobby-title">房间</h1>
+      <LangSwitch className="lang-corner" />
+      <h1 className="game-title lobby-title">{t('lobby.title')}</h1>
       <div className="setup-panel lobby-panel">
         <div className="lobby-code-row">
           <span className="lobby-code" onClick={copyCode}>
             {lobby.code}
           </span>
           <button className="btn" onClick={copyCode}>
-            {copied ? '已复制 ✓' : '复制房间码'}
+            {copied ? t('lobby.copied') : t('lobby.copyCode')}
           </button>
         </div>
-        <p className="lobby-hint">把房间码发给朋友，他们在首页输入即可加入</p>
+        <p className="lobby-hint">{t('lobby.shareHint')}</p>
 
         <div className="lobby-list">
           {lobby.players.map((p, i) => (
             <div key={i} className="lobby-row">
-              <span className={`lobby-kind lobby-kind-${p.kind}`}>{KIND_LABEL[p.kind]}</span>
+              <span className={`lobby-kind lobby-kind-${p.kind}`}>{t(`lobby.kind.${p.kind}` as Key)}</span>
               <span className="lobby-name">{p.name}</span>
-              {!p.connected && <span className="chip">已掉线</span>}
+              {!p.connected && <span className="chip">{t('lobby.disconnected')}</span>}
               {isHost && p.kind === 'ai' && (
                 <button className="btn lobby-remove" onClick={() => onRemove?.(i)}>
-                  移除
+                  {t('lobby.remove')}
                 </button>
               )}
               {isHost && p.kind === 'remote' && (
                 <button className="btn lobby-remove lobby-kick" onClick={() => onRemove?.(i)}>
-                  踢出
+                  {t('lobby.kick')}
                 </button>
               )}
             </div>
           ))}
           {Array.from({ length: lobby.maxPlayers - lobby.players.length }).map((_, i) => (
             <div key={`empty-${i}`} className="lobby-row lobby-empty">
-              <span className="lobby-name">等待加入…</span>
+              <span className="lobby-name">{t('lobby.waitingJoin')}</span>
             </div>
           ))}
         </div>
@@ -74,19 +76,19 @@ export function Lobby({ lobby, isHost, onAddAi, onRemove, onStart, onLeave, leav
                 disabled={lobby.players.length >= lobby.maxPlayers}
                 onClick={onAddAi}
               >
-                + 添加 AI
+                {t('lobby.addAi')}
               </button>
               <button className="btn btn-primary" disabled={!lobby.canStart} onClick={onStart}>
-                开始游戏（{lobby.players.length} 人）
+                {t('lobby.start', { n: lobby.players.length })}
               </button>
             </>
           )}
-          {!isHost && <span className="lobby-hint">等待房主开始游戏…</span>}
+          {!isHost && <span className="lobby-hint">{t('lobby.waitHost')}</span>}
           <button className="btn btn-ghost" onClick={onLeave}>
             {leaveLabel}
           </button>
         </div>
-        {isHost && !lobby.canStart && <p className="lobby-hint">至少需要 3 名玩家（可用 AI 补位）</p>}
+        {isHost && !lobby.canStart && <p className="lobby-hint">{t('lobby.needPlayers')}</p>}
       </div>
     </div>
   );

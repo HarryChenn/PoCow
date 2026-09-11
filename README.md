@@ -1,97 +1,121 @@
-# PoCow 德牛
+# PoCow · Texas Niu
 
-自创卡牌游戏「PoCow 德牛」（3+2 玩法）网页版，纯前端、无需服务器：
+**English** · [中文](README.zh-CN.md)
 
-- **单机模式**：1 名玩家对战 2–7 个 AI
-- **联机模式**：创建房间拿到 5 位房间码发给朋友，3–8 人同桌对战（可加 AI 补位）。基于 WebRTC 点对点（PeerJS），房主浏览器即权威主机；玩家掉线由 AI 接管，房主离开则房间解散
+A browser version of *PoCow Texas Niu*, an original 3 + 2 card game. Pure front-end, no server required:
 
-🎮 在线试玩：https://harrychenn.github.io/PoCow/
+- **Solo** — one player against 2–7 AI opponents
+- **Online** — create a room, share the 5-character room code, and play with 3–8 people at one table (AI can fill empty seats). Built on peer-to-peer WebRTC (PeerJS): the host's browser is the authoritative server, a disconnected player is taken over by AI, and the room closes when the host leaves
 
-## 运行
+🎮 Play online: https://harrychenn.github.io/PoCow/
+
+The interface is available in **English and Chinese**. The language buttons sit in the top-right corner of the home screen and in the table header; your choice is remembered locally. On a first visit the language follows your browser (Chinese browsers get Chinese, everyone else gets English).
+
+## Running
 
 ```bash
 npm install
-npm run dev    # 打开提示的本地地址即可游玩
-npm test       # 引擎规则单元测试
-npm run build  # 产出 dist/ 静态文件
+npm run dev    # open the printed local address to play
+npm test       # engine rule unit tests
+npm run build  # emit static files to dist/
 ```
 
-## 玩法规则
+## How to Play
 
-- 54 张牌（含 2 张 Joker）。J/Q/K/Joker 均算 10 点，A 算 1 点。Joker 不算花色。
-- 每人 5 张牌，3–8 人。
-- 三个核心概念：**牌力**决定谁赢（只比牌力）；**倍率**来自底牌加成，不参与比大小；**赔分 = 牌力 × 倍率**，是输家赔给赢家的分数。
+- 54 cards (2 Jokers). J / Q / K / Joker each count 10 points, A counts 1. A Joker has no suit.
+- 5 cards per player, 3–8 players.
+- Three ideas drive everything: **power** decides who wins (only power is compared); **multiplier** comes from bottom-card bonuses and never affects who wins; **payout = power × multiplier** is what each loser pays the winner.
 
-### 换牌阶段（自由行动，无回合顺序）
+### Swap Phase (free-for-all, no turn order)
 
-所有玩家**同时**行动：随时可换牌堆、找空闲的对手换牌或结束换牌。正在交换的一对玩家互相锁定（显示「交换中」），期间不能与其他人操作；多对玩家可并行交换。全员结束后进入拆分阶段。
+Everyone acts **at the same time**: swap with the deck, offer a swap to any idle opponent, or finish. A pair mid-swap is locked to each other (shown as "swapping") and cannot act with anyone else; several pairs can swap in parallel. Once everyone finishes, the arrange phase begins.
 
-1. **与牌堆换牌**：仅限尚未与任何对手换过牌时，弃掉指定一张、从牌堆摸一张。换后本局**退出与对手的换牌**——自己不能再发起，别人也不能再指定你交换。反之，**与玩家互换过后（无论发起还是接受），双方都不能再与牌堆换牌**。
-2. **找对手换牌**：指定一名对手发起交换，对方可拒绝；接受则**双方各从对方手牌中暗选一张互换**（看不到牌面，按位置选；双方选定后短暂亮出所选位置再交换）。**同一对玩家之间每局最多互换 2 次**（不论谁发起）；被拒绝不消耗次数，但不能再向同一人发起。
+1. **Swap with the deck** — only before you have swapped with any opponent: discard one named card and draw one from the deck. Afterwards you are **out of player swaps** for the round: you cannot offer one, and nobody can pick you. Conversely, **once you swap with a player (whether you offered or accepted), neither of you may use the deck again**.
+2. **Swap with an opponent** — pick an opponent and offer; they may decline. If they accept, **each of you blind-picks one card from the other hand** (you cannot see the faces, you pick by position; both chosen positions flash briefly before the trade). **The same pair may swap at most twice per round** (whoever offers); a decline costs no swap, but you cannot offer to that player again.
 
-### 牌型与计分
+### Hands and Scoring
 
-5 张拆为 3 张**底牌**（定倍率）+ 2 张**踢脚**（定牌力）。换牌结束后进入**拆分阶段**：每人自行点选 3 张作底牌并确认——完全手动，**拆分不当可能无牛**，组出好牌型正是乐趣所在；特殊胜利无需拆分、自动生效。全员提交后摊牌。
+Your 5 cards split into a 3-card **bottom** (sets the multiplier) and a 2-card **kicker** (sets the power). After swapping comes the **arrange phase**: everyone picks their own 3 bottom cards and confirms — entirely by hand, so **a bad split can leave you with no niu**. Building a good hand is the whole point. Special wins need no split and apply automatically. Once everyone submits, hands are revealed.
 
-**底牌倍率（3 张，点数和为 10 的倍数即成牛）**
+**Bottom multiplier** (3 cards summing to a multiple of 10 make a *niu*)
 
-| 底牌加成 | 倍率 |
+| Bottom bonus | Multiplier |
 | --- | --- |
-| 同花 | ×2 |
-| 顺子（Q+K+Joker 视为顺子） | ×2 |
-| 三条 | ×3 |
-| 王炸（双 Joker） | ×3 |
+| Flush | ×2 |
+| Straight (Q+K+Joker counts as one) | ×2 |
+| Trips (**always a niu**, no need to sum to a multiple of 10) | ×3 |
 
-同一组 3 张同时满足多个加成时相乘（如 3 张同花顺 = ×4）。
+Bonuses on the same 3 cards multiply together (a 3-card straight flush = ×4).
 
-**踢脚牌力（2 张，点数和取个位）**
+Trips are a niu on their own: otherwise 3 × rank is only a multiple of 10 when the rank counts 10, so trips of A–9 could never make a niu and could never collect the ×3.
 
-| 踢脚 | 牌力 |
+**Hand bonus — Joker Bomb**
+
+Holding **both Jokers** multiplies your final payout by **×3**, wherever they sit — bottom or kicker. It **stacks** with the bottom multiplier, and it applies even with no niu:
+
+| Hand | Payout |
 | --- | --- |
-| 1～6 | 1 |
+| Flush bottom (×2) + both Jokers in the kicker (power 7) | 7 × 2 × 3 = 42 |
+| Both Jokers + K as bottom (sum 30), kicker 4+6 (power 5) | 5 × 3 = 15 |
+| No niu, but holding both Jokers | 1 × 3 = 3 |
+
+A Joker Bomb is only 2 cards, so it is never a bottom on its own: to use it in the bottom you still need a third card that brings the bottom to a multiple of 10 (only a 10-point card does that).
+
+**Kicker power** (units digit of the 2-card sum)
+
+| Kicker | Power |
+| --- | --- |
+| 1–6 | 1 |
 | 7 / 8 / 9 | 2 / 3 / 4 |
-| 0（牛牛） | 5 |
-| 对子 / 双 Joker | 7 |
+| 0 (Niu Niu) | 5 |
+| Pair / two Jokers | 7 |
 
-**特殊胜利**（整手 5 张，无需凑牛；不叠踢脚）
+**Special wins** (all 5 cards, no niu needed, no kicker on top)
 
-| 牌型 | 牌力 |
+| Hand | Power |
 | --- | --- |
-| 五张顺子 | 8 |
-| 五张同花 | 9 |
-| 五花（全为人头牌/Joker） | 10 |
-| 十小（点数和 ≤ 10） | 11 |
-| 炸弹（四条） | 12 |
+| Five-card straight | 8 |
+| Five-card flush | 9 |
+| All face cards (J/Q/K/Joker) | 10 |
+| Ten Small (total ≤ 10) | 11 |
+| Bomb (four of a kind) | 12 |
 
-特殊胜利的赔分 = 特殊牌力 × 底牌倍率：
+A special win pays special power × bottom multiplier:
 
-- 同时满足多个特殊胜利时牌力**相加**（同花顺 = 8+9）；比大小时只取最高的那个牌力。
-- 底牌倍率取 5 张中「加成乘积最大的**某一个** 3 张子集」；加成只在同一子集自身同时满足时相乘，**不能跨子集拼凑**。
-  - 五张顺子自带 3 张顺 → 8×2 = 16 分
-  - 炸弹自带三条 → 12×3 = 36 分
-  - 同花顺 → (8+9)×2×2 = **68 分**
+- Multiple specials at once **add** their power (straight flush = 8+9); only the highest one is used when comparing hands.
+- The multiplier is the **single best 3-card subset** of the 5 cards; bonuses only multiply when the same subset satisfies them and **cannot be mixed across subsets**.
+  - A five-card straight contains a 3-card straight → 8×2 = 16
+  - A bomb contains trips → 12×3 = 36
+  - A straight flush → (8+9)×2×2 = **68**
+- The Joker Bomb ×3 is a hand bonus, so it multiplies on top of the subset multiplier (all face cards with both Jokers → 10 × 2 × 3 = 60).
 
-### 比牌与结算
+### Comparing and Scoring
 
-- 只比**牌力**：特殊胜利 > 普通踢脚 > 无牛；倍率不参与比大小、仅参与结算。
-- 无牛（凑不出 10 的倍数底牌）仍参与比较，小于任何有牛的手牌。
-- 牌力相同（含全员无牛）时按**德州扑克规则**比 5 张牌（Joker 视为最大单牌）。
-- **赢家通吃**：每个输家按赢家的赔分（牌力 × 倍率）赔给赢家；无牛获胜按 1 分结算；并列获胜时均分。
+- Only **power** is compared: special win > ordinary kicker > no niu. The multiplier never affects who wins, only what is paid.
+- No niu (no bottom summing to a multiple of 10) still takes part in the comparison and loses to any hand with a niu.
+- On equal power (including everyone with no niu), the 5 cards are compared by **Texas Hold'em** rules (a Joker is the highest single card).
+- **Winner takes all**: every loser pays the winner's payout (power × multiplier); winning with no niu pays 1 point; tied winners split the pot.
 
-## 工程结构
+## Project Layout
 
 ```
-src/engine/   纯 TypeScript 游戏引擎（与 UI 解耦，全部可单测）
-  cards.ts    牌型定义、点数、牌堆
-  scoring.ts  底牌倍率、踢脚牌力、特殊胜利、最优拆分
-  compare.ts  牌力比较 + 德州扑克平局判定
-  game.ts     发牌 → 换牌 → 摊牌 → 结算 状态机（纯函数）
-  ai.ts       AI 启发式决策
-src/net/      联机层（房主权威 P2P）
-  protocol.ts 消息与动作类型
-  view.ts     GameState → 每座位脱敏视图（他人手牌掩码、按索引选牌）
-  apply.ts    动作校验与应用（单机/房主/远端共用，防作弊）
-  host.ts     房主会话：建房、握手、AI 补位、广播、掉线转 AI
-  client.ts   加入者会话
-src/ui/       React 组件（GameTable 牌桌为单机/联机共用）
+src/engine/   Pure TypeScript game engine (UI-agnostic, fully unit-tested)
+  cards.ts    Card model, points, deck
+  scoring.ts  Bottom multiplier, kicker power, special wins, best split
+  compare.ts  Power comparison + Texas Hold'em tie-break
+  game.ts     Deal → swap → showdown → settle state machine (pure functions)
+  ai.ts       AI heuristics
+src/net/      Online layer (host-authoritative P2P)
+  protocol.ts Message and action types
+  view.ts     GameState → per-seat redacted view (others' hands masked, pick by index)
+  apply.ts    Action validation and application (shared by solo/host/remote, anti-cheat)
+  host.ts     Host session: create room, handshake, AI seats, broadcast, AI takeover
+  client.ts   Joiner session
+src/ui/       React components (GameTable is shared by solo and online play)
+src/i18n/     English/Chinese copy and localization
+  dict.ts     Copy dictionary (en is the source of keys; zh is type-checked against it)
+  index.tsx   Language context, switcher, interpolation
+  format.ts   Structured hands/log events → text in the current language
 ```
+
+The engine never produces display text: hand labels and log events are emitted as structured data and rendered per viewer, so in an online game each player reads the table in their own language regardless of the host's.

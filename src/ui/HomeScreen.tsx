@@ -3,6 +3,7 @@ import { Card } from '../engine/cards';
 import { normalizeCode } from '../net/code';
 import { CardView } from './CardView';
 import { RulesModal } from './RulesModal';
+import { LangSwitch, useI18n } from '../i18n';
 
 /** 开屏装饰：一手 10-J-Q-K-Joker */
 const TITLE_CARDS: Card[] = [
@@ -22,19 +23,21 @@ interface Props {
 }
 
 export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState(() => localStorage.getItem('pocow-name') ?? '');
   const [aiCount, setAiCount] = useState(3);
   const [code, setCode] = useState('');
   const [showRules, setShowRules] = useState(false);
 
   const finalName = () => {
-    const n = name.trim().slice(0, 12) || '玩家';
+    const n = name.trim().slice(0, 12) || t('home.playerDefault');
     localStorage.setItem('pocow-name', n);
     return n;
   };
 
   return (
     <div className="setup-screen">
+      <LangSwitch className="lang-corner" />
       <div className="title-cards">
         {TITLE_CARDS.map((c, i) => (
           <div key={c.id} className="title-card" style={{ '--i': i } as CSSProperties}>
@@ -43,23 +46,23 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
         ))}
       </div>
       <h1 className="game-title">PoCow</h1>
-      <div className="game-subtitle">德 牛</div>
+      <div className="game-subtitle">{t('home.subtitle')}</div>
 
       <div className="setup-panel">
         <div className="setup-row">
-          <span className="setup-label">昵称</span>
+          <span className="setup-label">{t('home.nickname')}</span>
           <input
             className="text-input"
             value={name}
             maxLength={12}
-            placeholder="玩家"
+            placeholder={t('home.playerDefault')}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
 
-        <div className="setup-sep">单机练习</div>
+        <div className="setup-sep">{t('home.soloSection')}</div>
         <div className="setup-row">
-          <span className="setup-label">AI 对手</span>
+          <span className="setup-label">{t('home.aiOpponents')}</span>
           <div className="count-chips">
             {[2, 3, 4, 5, 6, 7].map((n) => (
               <button
@@ -72,14 +75,14 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
             ))}
           </div>
           <button className="btn" disabled={!!busy} onClick={() => onSolo(finalName(), aiCount)}>
-            单机开局
+            {t('home.startSolo')}
           </button>
         </div>
 
-        <div className="setup-sep">和朋友联机</div>
+        <div className="setup-sep">{t('home.onlineSection')}</div>
         <div className="setup-row">
           <button className="btn btn-play btn-create" disabled={!!busy} onClick={() => onCreate(finalName())}>
-            创建房间
+            {t('home.createRoom')}
           </button>
         </div>
         <div className="setup-row">
@@ -87,7 +90,7 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
             className="text-input code-input"
             value={code}
             maxLength={5}
-            placeholder="房间码"
+            placeholder={t('home.roomCode')}
             onChange={(e) => setCode(normalizeCode(e.target.value))}
           />
           <button
@@ -95,7 +98,7 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
             disabled={!!busy || code.length !== 5}
             onClick={() => onJoin(finalName(), code)}
           >
-            加入房间
+            {t('home.joinRoom')}
           </button>
         </div>
 
@@ -103,7 +106,7 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
         {error && !busy && <div className="home-error">{error}</div>}
 
         <button className="btn btn-ghost" onClick={() => setShowRules(true)}>
-          查看规则
+          {t('home.viewRules')}
         </button>
       </div>
 

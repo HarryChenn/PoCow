@@ -2,18 +2,18 @@ import Peer, { DataConnection } from 'peerjs';
 import { createGame, GameState, markSeatAi, startRound } from '../engine/game';
 import { applyAction } from './apply';
 import { makeRoomCode, peerIdForCode } from './code';
-import { ClientMsg, HostMsg, LobbyView } from './protocol';
+import { ClientMsg, HostMsg, LobbyView, NetMsgKey } from './protocol';
 import { viewFor } from './view';
 
 const MAX_PLAYERS = 8;
 const MIN_PLAYERS = 3;
-const AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
+
 
 export interface HostEvents {
   onOpen: (code: string) => void;
   onLobby: (lobby: LobbyView) => void;
   onState: (state: GameState) => void;
-  onError: (msg: string) => void;
+  onError: (msg: NetMsgKey) => void;
 }
 
 interface Seat {
@@ -31,9 +31,14 @@ export class HostSession {
   private seats: Seat[];
   private ev: HostEvents;
   private closed = false;
+  /** AI 昵称与无名玩家的兜底昵称：按房主当前语言给一套 */
+  private aiNames: string[];
+  private fallbackName: string;
 
-  constructor(hostName: string, ev: HostEvents) {
+  constructor(hostName: string, ev: HostEvents, names: { ai: string[]; fallback: string }) {
     this.ev = ev;
+    this.aiNames = names.ai;
+    this.fallbackName = names.fallback;
     this.seats = [{ name: hostName, kind: 'host', connected: true }];
     this.open(0);
   }
@@ -57,7 +62,7 @@ export class HostSession {
         return;
       }
       if (!this.closed && !this.code) {
-        this.ev.onError('联机服务连接失败，请稍后重试');
+        this.ev.onError('net.serviceFail');
       }
     });
     peer.on('connection', (conn) => {
@@ -73,10 +78,10 @@ export class HostSession {
 
   private handleMsg(conn: DataConnection, msg: ClientMsg) {
     if (msg.t === 'hello') {
-      if (this.state) return this.reject(conn, '游戏已开始，无法加入');
-      if (this.seats.length >= MAX_PLAYERS) return this.reject(conn, '房间已满');
+      if (this.state) return this.reject(conn, 'net.started');
+      if (this.seats.length >= MAX_PLAYERS) return this.reject(conn, 'net.roomFull');
       if (this.seatOf(conn) >= 0) return;
-      const base = String(msg.name || '玩家').slice(0, 12);
+      const base = String(msg.name || this.fallbackName).slice(0, 12);
       const name = this.seats.some((s) => s.name === base)
         ? `${base}${this.seats.length + 1}`
         : base;
@@ -94,7 +99,7 @@ export class HostSession {
     }
   }
 
-  private reject(conn: DataConnection, msg: string) {
+  private reject(conn: DataConnection, msg: NetMsgKey) {
     this.send(conn, { t: 'error', msg });
     setTimeout(() => conn.close(), 300);
   }
@@ -140,7 +145,7 @@ export class HostSession {
   addAi() {
     if (this.state || this.seats.length >= MAX_PLAYERS) return;
     const used = new Set(this.seats.map((s) => s.name));
-    const name = AI_NAMES.find((n) => !used.has(n)) ?? `AI-${this.seats.length}`;
+    const name = this.aiNames.find((n) => !used.has(n)) ?? `AI-${this.seats.length}`;
     this.seats.push({ name, kind: 'ai', connected: true });
     this.pushLobby();
   }
@@ -151,7 +156,7 @@ export class HostSession {
     const seat = this.seats[index];
     if (!seat || seat.kind === 'host') return;
     if (seat.kind === 'remote' && seat.conn) {
-      this.send(seat.conn, { t: 'roomClosed', msg: '你已被房主移出房间' });
+      this.send(seat.conn, { t: 'roomClosed', msg: 'net.kicked' });
       const conn = seat.conn;
       seat.conn = undefined; // 防止 close 事件触发 handleDrop 重复处理
       setTimeout(() => conn.close(), 300);
@@ -192,7 +197,7 @@ export class HostSession {
   close() {
     this.closed = true;
     for (const { conn } of this.remotes()) {
-      this.send(conn, { t: 'roomClosed', msg: '房主解散了房间' });
+      this.send(conn, { t: 'roomClosed', msg: 'net.hostDisbanded' });
     }
     setTimeout(() => this.peer?.destroy(), 300);
   }

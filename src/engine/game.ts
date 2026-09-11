@@ -1,5 +1,5 @@
 import { Card, makeDeck, shuffle } from './cards';
-import { evalSpecials, evaluateChosen, evaluateHand, HandEval } from './scoring';
+import { evalSpecials, evaluateChosen, evaluateHand, HandEval, HandLabel } from './scoring';
 import { compareHands } from './compare';
 
 export interface PlayerState {
@@ -51,13 +51,24 @@ export type LogKind =
   | 'win'
   | 'takeover';
 
-/** 结构化日志：kind/seat 供 UI 触发飘字、飞牌等动效；id 自增，视图裁剪后仍可检测新事件 */
+/**
+ * 结构化日志：不存文案，只存事件与参数，由 UI 按各自语言渲染
+ * （联机时房主与客户端语言可能不同，预渲染文案会把房主的语言带给所有人）。
+ * kind/seat 同时供 UI 触发飘字、飞牌等动效；id 自增，视图裁剪后仍可检测新事件。
+ */
 export interface LogEntry {
   id: number;
-  text: string;
-  kind?: LogKind;
+  kind: LogKind;
+  /** 主语座位 */
   seat?: number;
+  /** 宾语座位 */
   seat2?: number;
+  /** win：并列赢家座位 */
+  seats?: number[];
+  /** round：局数；swap：双方已互换次数；win：赔分 */
+  num?: number;
+  /** win：赢家牌型标签 */
+  label?: HandLabel;
 }
 
 function pushLog(s: GameState, entry: Omit<LogEntry, 'id'>): void {
@@ -143,7 +154,7 @@ export function startRound(prev: GameState): GameState {
   s.phase = 'exchange';
   s.sessions = [];
   s.result = null;
-  pushLog(s, { text: `—— 第 ${s.round} 局开始，自由换牌 ——`, kind: 'round' });
+  pushLog(s, { kind: 'round', num: s.round });
   return s;
 }
 
@@ -204,11 +215,7 @@ export function doDeckSwap(prev: GameState, pid: number, cardId: string): GameSt
   p.hand[idx] = s.deck.shift() as Card;
   p.usedDeckSwap = true;
   p.hasActed = true;
-  pushLog(s, {
-    text: `${p.name} 与牌堆换了一张牌（本局退出与对手的换牌）`,
-    kind: 'deckSwap',
-    seat: pid,
-  });
+  pushLog(s, { kind: 'deckSwap', seat: pid });
   return sweep(s);
 }
 
@@ -217,12 +224,7 @@ export function doRequest(prev: GameState, from: number, to: number): GameState 
   const s = structuredClone(prev);
   if (s.phase !== 'exchange' || !availableTargets(s, from).includes(to)) return s;
   s.sessions.push({ from, to, stage: 'pending', fromPick: null, toPick: null });
-  pushLog(s, {
-    text: `${s.players[from].name} 请求与 ${s.players[to].name} 交换手牌`,
-    kind: 'request',
-    seat: from,
-    seat2: to,
-  });
+  pushLog(s, { kind: 'request', seat: from, seat2: to });
   return s;
 }
 
@@ -233,23 +235,14 @@ export function doRespond(prev: GameState, responder: number, accept: boolean): 
   if (s.phase !== 'exchange' || idx < 0) return s;
   const ses = s.sessions[idx];
   const pf = s.players[ses.from];
-  const pt = s.players[ses.to];
   if (accept) {
     ses.stage = 'picking';
-    pushLog(s, {
-      text: `${pt.name} 接受了交换，双方各从对方手牌中暗选一张`,
-      kind: 'accept',
-      seat: ses.to,
-    });
+    pushLog(s, { kind: 'accept', seat: ses.to });
     return s;
   }
   s.sessions.splice(idx, 1);
   pf.refusedMe.push(ses.to);
-  pushLog(s, {
-    text: `${pt.name} 拒绝了 ${pf.name} 的交换请求`,
-    kind: 'refuse',
-    seat: ses.to,
-  });
+  pushLog(s, { kind: 'refuse', seat: ses.to, seat2: ses.from });
   return sweep(s);
 }
 
@@ -291,12 +284,7 @@ export function doPickCommit(prev: GameState, from: number): GameState {
   pf.hasActed = true;
   pt.hasActed = true;
   s.sessions.splice(idx, 1);
-  pushLog(s, {
-    text: `${pf.name} 与 ${pt.name} 互换了一张牌（双方已互换 ${count}/2 次）`,
-    kind: 'swap',
-    seat: ses.from,
-    seat2: ses.to,
-  });
+  pushLog(s, { kind: 'swap', seat: ses.from, seat2: ses.to, num: count });
   return sweep(s);
 }
 
@@ -306,7 +294,7 @@ export function doPass(prev: GameState, pid: number): GameState {
   const p = s.players[pid];
   if (s.phase !== 'exchange' || p.passed || isBusy(s, pid)) return s;
   p.passed = true;
-  pushLog(s, { text: `${p.name} 结束换牌`, kind: 'pass', seat: pid });
+  pushLog(s, { kind: 'pass', seat: pid });
   return sweep(s);
 }
 
@@ -316,7 +304,7 @@ export function markSeatAi(prev: GameState, pid: number): GameState {
   const p = s.players[pid];
   if (!p.isHuman) return s;
   p.isHuman = false;
-  pushLog(s, { text: `${p.name} 掉线，由 AI 接管`, kind: 'takeover', seat: pid });
+  pushLog(s, { kind: 'takeover', seat: pid });
   return s;
 }
 
@@ -326,7 +314,7 @@ function enterArrange(s: GameState): GameState {
   for (const p of s.players) {
     if (evalSpecials(p.hand).length > 0) p.arrangedDone = true;
   }
-  pushLog(s, { text: '换牌结束，请各自拆分 3+2（选 3 张做底牌）', kind: 'arrange' });
+  pushLog(s, { kind: 'arrange' });
   if (s.players.every((p) => p.arrangedDone)) return showdown(s);
   return s;
 }
@@ -340,7 +328,7 @@ export function doArrange(prev: GameState, pid: number, bottomIds: string[]): Ga
   if (unique.length !== 3 || !unique.every((id) => p.hand.some((c) => c.id === id))) return s;
   p.chosenBottom = unique;
   p.arrangedDone = true;
-  pushLog(s, { text: `${p.name} 完成拆分`, kind: 'arranged', seat: pid });
+  pushLog(s, { kind: 'arranged', seat: pid });
   if (s.players.every((x) => x.arrangedDone)) return showdown(s);
   return s;
 }
@@ -374,12 +362,12 @@ function showdown(s: GameState): GameState {
 
   s.result = { evals: entries.map((e) => e.eval), winners, deltas, payout };
   s.phase = 'showdown';
-  const winnerNames = winners.map((w) => s.players[w].name).join('、');
-  const label = entries[winners[0]].eval.label;
   pushLog(s, {
-    text: `本局 ${winnerNames} 获胜（${label}），每位输家赔 ${payout} 分`,
     kind: 'win',
     seat: winners[0],
+    seats: winners,
+    num: payout,
+    label: entries[winners[0]].eval.label,
   });
   return s;
 }
