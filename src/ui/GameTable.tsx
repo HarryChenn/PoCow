@@ -14,6 +14,8 @@ import { CardView } from './CardView';
 import { ShowdownPanel } from './ShowdownPanel';
 import { RulesModal } from './RulesModal';
 import { burst, burstGold, burstGreen, shake } from './effects';
+import { LangSwitch, useI18n } from '../i18n';
+import { detailText, labelText, logText } from '../i18n/format';
 
 const FLIGHT_MS = 900;
 const CARD_W = 44;
@@ -72,6 +74,7 @@ function seatPoint(seat: number): Point | null {
 }
 
 export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onExit }: Props) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<'idle' | 'discard'>('idle');
   const [flights, setFlights] = useState<Flight[]>([]);
   const [floats, setFloats] = useState<FloatItem[]>([]);
@@ -141,9 +144,9 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
   // 阶段横幅
   useEffect(() => {
     if (state.phase === 'showdown') return;
-    setBanner(state.phase === 'arrange' ? '拆分 3 + 2 ！' : '自由换牌，开始！');
-    const t = setTimeout(() => setBanner(null), 1200);
-    return () => clearTimeout(t);
+    setBanner(t(state.phase === 'arrange' ? 'table.banner.arrange' : 'table.banner.exchange'));
+    const timer = setTimeout(() => setBanner(null), 1200);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.round, state.phase]);
 
@@ -179,7 +182,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
       if (e.seat === undefined) continue;
       switch (e.kind) {
         case 'deckSwap': {
-          addFloat(e.seat, '🃏 换牌堆');
+          addFloat(e.seat, t('float.deckSwap'));
           if (e.seat !== myId) {
             const a = seatPoint(e.seat);
             const b = deckPoint();
@@ -192,16 +195,16 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
           break;
         }
         case 'request':
-          addFloat(e.seat, '🤝 求交换');
+          addFloat(e.seat, t('float.request'));
           break;
         case 'accept': {
-          addFloat(e.seat, '🤝 接受');
+          addFloat(e.seat, t('float.accept'));
           const p = seatCenter(e.seat);
           if (p) burstGreen(p.left, p.top);
           break;
         }
         case 'refuse': {
-          addFloat(e.seat, '拒 绝', true);
+          addFloat(e.seat, t('float.refuse'), true);
           shake();
           break;
         }
@@ -213,13 +216,13 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
           break;
         }
         case 'pass':
-          addFloat(e.seat, '✋ 结束换牌');
+          addFloat(e.seat, t('float.pass'));
           break;
         case 'arranged':
-          addFloat(e.seat, '✅ 已拆分');
+          addFloat(e.seat, t('float.arranged'));
           break;
         case 'takeover': {
-          addFloat(e.seat, '🔌 AI 接管');
+          addFloat(e.seat, t('float.takeover'));
           const p = seatCenter(e.seat);
           if (p) burst(p.left, p.top, { symbols: ['⚡', '✦'], colors: ['#9aa7b3', '#d5dde3'], count: 10 });
           break;
@@ -293,30 +296,32 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     const ses = sessionOf(state, pid);
     if (!ses) return null;
     const partner = pid === ses.from ? ses.to : ses.from;
-    return partner === myId ? '你' : state.players[partner].name;
+    return partner === myId ? t('table.you') : state.players[partner].name;
   };
 
   const phaseText = () => {
-    if (state.phase === 'showdown') return '摊牌';
+    const total = state.players.length;
+    if (state.phase === 'showdown') return t('table.phase.showdown');
     if (state.phase === 'arrange') {
       const done = state.players.filter((p) => p.arrangedDone).length;
-      return `拆分阶段（${done}/${state.players.length} 已提交）`;
+      return t('table.phase.arrange', { done, total });
     }
-    const passed = state.players.filter((p) => p.passed).length;
-    return `自由换牌（${passed}/${state.players.length} 已结束）`;
+    const done = state.players.filter((p) => p.passed).length;
+    return t('table.phase.exchange', { done, total });
   };
 
   return (
     <div className="table-screen">
       <header className="table-header">
         <span className="brand">
-          PoCow <em>德牛</em>
+          PoCow <em>{t('table.brandSub')}</em>
         </span>
-        <span className="round-tag">第 {state.round} 局</span>
+        <span className="round-tag">{t('table.round', { n: state.round })}</span>
         <span className="phase-tag">{phaseText()}</span>
         <button className="btn header-rules" onClick={() => setShowRules(true)}>
-          规则
+          {t('table.rules')}
         </button>
+        <LangSwitch className="header-lang" />
       </header>
 
       <div className="opponents-row">
@@ -336,7 +341,8 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   className="seat-swap-btn"
                   onClick={() => onAction({ k: 'request', to: p.id })}
                 >
-                  🤝 换牌{(me.swapsWith[p.id] ?? 0) > 0 ? '（剩1次）' : ''}
+                  {t('table.swapBtn')}
+                  {(me.swapsWith[p.id] ?? 0) > 0 ? t('table.swapBtnLast') : ''}
                 </button>
               )}
               <div className="seat-name">
@@ -350,7 +356,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   </span>
                 )}
               </div>
-              <div className="seat-score">分数 {fmt(p.score)}</div>
+              <div className="seat-score">{t('table.score', { n: fmt(p.score) })}</div>
               <div className="seat-cards">
                 {p.hand.map((c, i) => (
                   <CardView
@@ -369,16 +375,18 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
               </div>
               <div className="seat-status">
                 {busySeat && (
-                  <span className="chip chip-busy">🔄 与 {partnerName(p.id)} 交换中</span>
+                  <span className="chip chip-busy">
+                    {t('table.swappingWith', { name: partnerName(p.id) ?? '' })}
+                  </span>
                 )}
-                {p.usedDeckSwap && <span className="chip">已换牌堆</span>}
+                {p.usedDeckSwap && <span className="chip">{t('table.usedDeck')}</span>}
                 {(p.swapsWith[myId] ?? 0) > 0 && (
-                  <span className="chip">与你已换 {p.swapsWith[myId]}/2</span>
+                  <span className="chip">{t('table.swappedWithYou', { n: p.swapsWith[myId] })}</span>
                 )}
                 {state.phase === 'arrange' ? (
-                  p.arrangedDone && <span className="chip chip-done">已拆分</span>
+                  p.arrangedDone && <span className="chip chip-done">{t('table.arrangedChip')}</span>
                 ) : (
-                  p.passed && <span className="chip chip-done">已结束</span>
+                  p.passed && <span className="chip chip-done">{t('table.passedChip')}</span>
                 )}
               </div>
             </div>
@@ -403,12 +411,12 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
             <div className="card card-sm card-back" />
             <div className="card card-sm card-back" />
           </div>
-          <span className="deck-count">牌堆 {deckSize(state)}</span>
+          <span className="deck-count">{t('table.deck', { n: deckSize(state) })}</span>
         </div>
         <div className="log-panel">
           {state.log.slice(-6).map((line) => (
             <div key={line.id} className="log-line">
-              {line.text}
+              {logText(t, line, (seat) => state.players[seat].name)}
             </div>
           ))}
         </div>
@@ -419,12 +427,10 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         data-seat-id={myId}
       >
         <div className="human-info">
-          <span className="seat-name">
-            {me.name}（分数 {fmt(me.score)}）
-          </span>
+          <span className="seat-name">{t('table.mePanel', { name: me.name, score: fmt(me.score) })}</span>
           {state.phase === 'exchange' && (
             <span className="hand-hint">
-              最佳可拆：{myEval.label} · {myEval.detail}
+              {t('table.bestSplit')} {labelText(t, myEval.label)} · {detailText(t, myEval.detail)}
             </span>
           )}
         </div>
@@ -466,13 +472,13 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         {state.phase === 'arrange' &&
           (me.arrangedDone ? (
             <div className="action-bar">
-              <span className="bar-hint">已提交拆分，等待其他玩家…</span>
+              <span className="bar-hint">{t('table.arrangedWait')}</span>
             </div>
           ) : (
             <>
               <div className="arrange-preview">
                 <span className="arrange-group">
-                  <b>底牌</b>
+                  <b>{t('table.bottom')}</b>
                   {me.hand.filter((c) => bottomSel.includes(c.id)).map(miniCard)}
                   {Array.from({ length: 3 - bottomSel.length }).map((_, i) => (
                     <span key={`slot-${i}`} className="mini-card mini-empty">
@@ -486,14 +492,14 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                       const niu = isNiuBottom(bottom);
                       return (
                         <span className={`arrange-sum ${niu ? 'sum-niu' : ''}`}>
-                          和 {sum}
-                          {bottomSel.length === 3 && (niu ? ' ✓ 成牛' : ' ✗ 无牛')}
+                          {t('table.sum', { n: sum })}
+                          {bottomSel.length === 3 && t(niu ? 'table.isNiu' : 'table.noNiu')}
                         </span>
                       );
                     })()}
                 </span>
                 <span className="arrange-group">
-                  <b>踢脚</b>
+                  <b>{t('table.kicker')}</b>
                   {bottomSel.length === 3 ? (
                     me.hand.filter((c) => !bottomSel.includes(c.id)).map(miniCard)
                   ) : (
@@ -505,21 +511,19 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                     const ev = evaluateChosen(me.hand, bottomSel);
                     return (
                       <span className="arrange-eval">
-                        {ev.label} · {ev.detail}
+                        {labelText(t, ev.label)} · {detailText(t, ev.detail)}
                       </span>
                     );
                   })()}
               </div>
               <div className="action-bar">
-                <span className="mode-hint">
-                  点选 3 张作为底牌（{bottomSel.length}/3），其余 2 张为踢脚
-                </span>
+                <span className="mode-hint">{t('table.arrangeHint', { n: bottomSel.length })}</span>
                 <button
                   className="btn btn-primary"
                   disabled={bottomSel.length !== 3}
                   onClick={() => onAction({ k: 'arrange', bottomIds: bottomSel })}
                 >
-                  确认拆分
+                  {t('table.confirmArrange')}
                 </button>
               </div>
             </>
@@ -528,26 +532,28 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         {iAmPicking && myPartnerId !== null && (
           <div className="action-bar">
             <span className="mode-hint">
-              点击 {state.players[myPartnerId].name} 的一张暗牌，选走它
+              {t('table.pickHint', { name: state.players[myPartnerId].name })}
             </span>
           </div>
         )}
 
         {mySession && mySession.stage === 'picking' && myPickDone && (
           <div className="action-bar">
-            <span className="bar-hint">已选定，等待对方选牌…</span>
+            <span className="bar-hint">{t('table.pickedWait')}</span>
           </div>
         )}
 
         {iRequested && myPartnerId !== null && (
           <div className="action-bar">
-            <span className="bar-hint">等待 {state.players[myPartnerId].name} 响应交换…</span>
+            <span className="bar-hint">
+              {t('table.requestWait', { name: state.players[myPartnerId].name })}
+            </span>
           </div>
         )}
 
         {state.phase === 'exchange' && me.passed && (
           <div className="action-bar">
-            <span className="bar-hint">已结束换牌，等待其他玩家…</span>
+            <span className="bar-hint">{t('table.passedWait')}</span>
           </div>
         )}
 
@@ -560,23 +566,21 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
                   disabled={!canDeckSwap(state, myId)}
                   onClick={() => setMode('discard')}
                 >
-                  与牌堆换一张
+                  {t('table.deckSwapBtn')}
                 </button>
                 <button className="btn btn-primary" onClick={() => onAction({ k: 'pass' })}>
-                  结束换牌
+                  {t('table.passBtn')}
                 </button>
                 {targets.length > 0 && (
-                  <span className="bar-hint">
-                    点对手座位上的 🤝 可发起换牌（同一对玩家最多互换 2 次）
-                  </span>
+                  <span className="bar-hint">{t('table.swapTargetHint')}</span>
                 )}
               </>
             )}
             {mode === 'discard' && (
               <>
-                <span className="mode-hint">点击你要弃掉的牌 · 换后本局退出与对手的换牌</span>
+                <span className="mode-hint">{t('table.discardHint')}</span>
                 <button className="btn" onClick={() => setMode('idle')}>
-                  取消
+                  {t('table.cancel')}
                 </button>
               </>
             )}
@@ -588,19 +592,19 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
         <div className="modal-overlay">
           <div className="modal">
             <p>
-              {state.players[mySession.from].name} 想与你交换手牌
+              {t('table.requestModal', { name: state.players[mySession.from].name })}
               <br />
-              <small>（若接受，双方各从对方手牌中暗选一张互换）</small>
+              <small>{t('table.requestModalSub')}</small>
             </p>
             <div className="modal-actions">
               <button
                 className="btn btn-primary"
                 onClick={() => onAction({ k: 'respond', accept: true })}
               >
-                接受
+                {t('table.accept')}
               </button>
               <button className="btn" onClick={() => onAction({ k: 'respond', accept: false })}>
-                拒绝
+                {t('table.refuse')}
               </button>
             </div>
           </div>

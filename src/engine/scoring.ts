@@ -29,9 +29,12 @@ export function hasBothJokers(cards: Card[]): boolean {
   return cards.filter(isJoker).length === 2;
 }
 
+/** 底牌加成的种类（UI 按当前语言渲染，引擎不产出文案） */
+export type BonusTag = 'trips' | 'jokerBomb' | 'flush' | 'straight';
+
 export interface BonusEval {
   mult: number;
-  tags: string[];
+  tags: BonusTag[];
 }
 
 /**
@@ -40,60 +43,72 @@ export interface BonusEval {
  */
 export function bonusOf3(cards: Card[]): BonusEval {
   let mult = 1;
-  const tags: string[] = [];
+  const tags: BonusTag[] = [];
   if (isTrips(cards)) {
     mult *= 3;
-    tags.push('三条');
+    tags.push('trips');
   }
   if (hasBothJokers(cards)) {
     mult *= 3;
-    tags.push('王炸');
+    tags.push('jokerBomb');
   }
   if (isFlush(cards)) {
     mult *= 2;
-    tags.push('同花');
+    tags.push('flush');
   }
   if (isStraight(cards)) {
     mult *= 2;
-    tags.push('顺子');
+    tags.push('straight');
   }
   return { mult, tags };
 }
 
+/** 特殊胜利的种类 */
+export type SpecialName = 'straight5' | 'flush5' | 'allFace' | 'tenSmall' | 'bomb';
+
+/** 牌型标签：结构化，交给 UI 按语言渲染 */
+export type HandLabel =
+  | { k: 'none' }
+  | { k: 'pair' }
+  | { k: 'doubleJoker' }
+  | { k: 'niuniu' }
+  | { k: 'kicker'; unit: number }
+  | { k: 'special'; names: SpecialName[] };
+
 export interface KickerEval {
   base: number;
-  tag: string;
+  label: HandLabel;
 }
 
 /** 2 张踢脚：对子/双 Joker 7×；否则按点数和的个位：0→5、7→2、8→3、9→4、其余→1 */
 export function evalKicker(cards: Card[]): KickerEval {
   const [a, b] = cards;
   if (a.rank === b.rank) {
-    return { base: 7, tag: isJoker(a) ? '双王' : '对子' };
+    return { base: 7, label: { k: isJoker(a) ? 'doubleJoker' : 'pair' } };
   }
   const unit = (points(a) + points(b)) % 10;
-  if (unit === 0) return { base: 5, tag: '牛牛' };
-  if (unit === 7) return { base: 2, tag: '踢脚7' };
-  if (unit === 8) return { base: 3, tag: '踢脚8' };
-  if (unit === 9) return { base: 4, tag: '踢脚9' };
-  return { base: 1, tag: `踢脚${unit}` };
+  if (unit === 0) return { base: 5, label: { k: 'niuniu' } };
+  if (unit === 7) return { base: 2, label: { k: 'kicker', unit } };
+  if (unit === 8) return { base: 3, label: { k: 'kicker', unit } };
+  if (unit === 9) return { base: 4, label: { k: 'kicker', unit } };
+  return { base: 1, label: { k: 'kicker', unit } };
 }
 
 export interface SpecialWin {
-  name: string;
+  name: SpecialName;
   base: number;
 }
 
 /** 特殊胜利（整手 5 张，无需凑牛） */
 export function evalSpecials(cards: Card[]): SpecialWin[] {
   const specials: SpecialWin[] = [];
-  if (isStraight(cards)) specials.push({ name: '五张顺子', base: 8 });
-  if (isFlush(cards)) specials.push({ name: '五张同花', base: 9 });
-  if (cards.every((c) => c.rank >= 11)) specials.push({ name: '五花', base: 10 });
-  if (totalPoints(cards) <= 10) specials.push({ name: '十小', base: 11 });
+  if (isStraight(cards)) specials.push({ name: 'straight5', base: 8 });
+  if (isFlush(cards)) specials.push({ name: 'flush5', base: 9 });
+  if (cards.every((c) => c.rank >= 11)) specials.push({ name: 'allFace', base: 10 });
+  if (totalPoints(cards) <= 10) specials.push({ name: 'tenSmall', base: 11 });
   const counts = new Map<number, number>();
   for (const c of cards) counts.set(c.rank, (counts.get(c.rank) ?? 0) + 1);
-  if ([...counts.values()].some((n) => n === 4)) specials.push({ name: '炸弹', base: 12 });
+  if ([...counts.values()].some((n) => n === 4)) specials.push({ name: 'bomb', base: 12 });
   return specials;
 }
 
@@ -115,30 +130,36 @@ export interface Split {
   kicker: Card[];
 }
 
+/** 牌力明细的结构化数据（UI 渲染成「牌力 A × 倍率 B（…）= C 分」） */
+export interface EvalDetail {
+  /** 牌力基数；特殊胜利为各基数之和 */
+  base: number;
+  /** 同时满足多个特殊胜利时的各项基数，用于显示 (8+9) */
+  parts?: number[];
+  mult: number;
+  tags: BonusTag[];
+  payout: number;
+}
+
 export interface HandEval {
   kind: 'special' | 'niu' | 'none';
   /** 牌力：特殊胜利 100+最高基数；普通牛 = 踢脚基数；无牛 = 0。平局再按德州扑克比 5 张 */
   power: number;
   /** 结算赔率（无牛获胜按 1×） */
   payout: number;
-  label: string;
-  detail: string;
+  label: HandLabel;
+  /** 无牛为 null（UI 显示固定文案） */
+  detail: EvalDetail | null;
   split: Split | null;
   specials: SpecialWin[];
-}
-
-function niuDetail(base: number, bonus: BonusEval, payout: number): string {
-  return bonus.mult > 1
-    ? `牌力 ${base} × 倍率 ${bonus.mult}（${bonus.tags.join('·')}）= ${payout} 分`
-    : `牌力 ${base} = ${payout} 分`;
 }
 
 const NONE_EVAL = {
   kind: 'none' as const,
   power: 0,
   payout: 1,
-  label: '无牛',
-  detail: '牌力 0（若胜按 1 分结算）',
+  label: { k: 'none' } as HandLabel,
+  detail: null,
   specials: [] as SpecialWin[],
 };
 
@@ -163,8 +184,8 @@ export function evaluateChosen(cards: Card[], chosenBottom: string[] | null): Ha
     kind: 'niu',
     power: k.base,
     payout,
-    label: k.tag,
-    detail: niuDetail(k.base, bonus, payout),
+    label: k.label,
+    detail: { base: k.base, mult: bonus.mult, tags: bonus.tags, payout },
     split: { bottom, kicker },
     specials: [],
   };
@@ -177,17 +198,18 @@ export function evaluateHand(cards: Card[]): HandEval {
     const maxBase = Math.max(...specials.map((x) => x.base));
     const bonus = bestBonusSubset(cards);
     const payout = baseSum * bonus.mult;
-    const baseText = specials.length > 1 ? `(${specials.map((s) => s.base).join('+')})` : `${baseSum}`;
-    const detail =
-      bonus.mult > 1
-        ? `牌力 ${baseText} × 倍率 ${bonus.mult}（${bonus.tags.join('·')}）= ${payout} 分`
-        : `牌力 ${baseText} = ${payout} 分`;
     return {
       kind: 'special',
       power: 100 + maxBase,
       payout,
-      label: specials.map((s) => s.name).join('+'),
-      detail,
+      label: { k: 'special', names: specials.map((s) => s.name) },
+      detail: {
+        base: baseSum,
+        parts: specials.length > 1 ? specials.map((s) => s.base) : undefined,
+        mult: bonus.mult,
+        tags: bonus.tags,
+        payout,
+      },
       split: null,
       specials,
     };
@@ -210,13 +232,17 @@ export function evaluateHand(cards: Card[]): HandEval {
   }
 
   if (best) {
-    const detail = niuDetail(best.kicker.base, best.bonus, best.payout);
     return {
       kind: 'niu',
       power: best.kicker.base,
       payout: best.payout,
-      label: best.kicker.tag,
-      detail,
+      label: best.kicker.label,
+      detail: {
+        base: best.kicker.base,
+        mult: best.bonus.mult,
+        tags: best.bonus.tags,
+        payout: best.payout,
+      },
       split: best.split,
       specials: [],
     };

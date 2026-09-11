@@ -8,20 +8,30 @@ import { GameTable } from './ui/GameTable';
 import { HomeScreen } from './ui/HomeScreen';
 import { Lobby } from './ui/Lobby';
 import { useAiDriver } from './ui/useAiDriver';
-
-const SOLO_AI_NAMES = ['阿牛', '二妞', '三顺', '四喜', '五魁', '六合', '七巧'];
+import { aiNames, I18nProvider, useI18n } from './i18n';
+import { Key } from './i18n/dict';
+import { NetMsgKey } from './net/protocol';
 
 type Mode = 'home' | 'solo' | 'host' | 'client';
 
 export default function App() {
+  return (
+    <I18nProvider>
+      <Game />
+    </I18nProvider>
+  );
+}
+
+function Game() {
+  const { t, lang } = useI18n();
   const [mode, setMode] = useState<Mode>('home');
   const [soloState, setSoloState] = useState<GameState | null>(null);
   const [hostState, setHostState] = useState<GameState | null>(null);
   const [lobby, setLobby] = useState<LobbyView | null>(null);
   const [clientView, setClientView] = useState<GameView | null>(null);
   const [clientSeat, setClientSeat] = useState(0);
-  const [homeBusy, setHomeBusy] = useState<string | null>(null);
-  const [homeError, setHomeError] = useState<string | null>(null);
+  const [homeBusy, setHomeBusy] = useState<Key | null>(null);
+  const [homeError, setHomeError] = useState<NetMsgKey | null>(null);
   const hostRef = useRef<HostSession | null>(null);
   const clientRef = useRef<ClientSession | null>(null);
 
@@ -49,32 +59,36 @@ export default function App() {
 
   const startSolo = (name: string, aiCount: number) => {
     setHomeError(null);
-    setSoloState(createGame([name, ...SOLO_AI_NAMES.slice(0, aiCount)], [0]));
+    setSoloState(createGame([name, ...aiNames(lang).slice(0, aiCount)], [0]));
     setMode('solo');
   };
 
   const createRoom = (name: string) => {
     setHomeError(null);
-    setHomeBusy('正在创建房间…');
-    hostRef.current = new HostSession(name, {
-      onOpen: () => {
-        setHomeBusy(null);
-        setMode('host');
+    setHomeBusy('home.creating');
+    hostRef.current = new HostSession(
+      name,
+      {
+        onOpen: () => {
+          setHomeBusy(null);
+          setMode('host');
+        },
+        onLobby: setLobby,
+        onState: setHostState,
+        onError: (msg) => {
+          hostRef.current = null;
+          setHomeBusy(null);
+          setHomeError(msg);
+          setMode('home');
+        },
       },
-      onLobby: setLobby,
-      onState: setHostState,
-      onError: (msg) => {
-        hostRef.current = null;
-        setHomeBusy(null);
-        setHomeError(msg);
-        setMode('home');
-      },
-    });
+      { ai: aiNames(lang), fallback: t('home.playerDefault') },
+    );
   };
 
   const joinRoom = (name: string, code: string) => {
     setHomeError(null);
-    setHomeBusy('正在加入房间…');
+    setHomeBusy('home.joining');
     clientRef.current = new ClientSession(code, name, {
       onLobby: (lb) => {
         setHomeBusy(null);
@@ -105,7 +119,7 @@ export default function App() {
         myId={0}
         onAction={(a) => setSoloState((g) => (g ? applyAction(g, 0, a) : g))}
         canNextRound
-        exitLabel="返回首页"
+        exitLabel={t('showdown.backHome')}
         onExit={goHome}
       />
     );
@@ -119,7 +133,7 @@ export default function App() {
           myId={0}
           onAction={(a) => hostRef.current?.apply((g) => applyAction(g, 0, a))}
           canNextRound
-          exitLabel="解散房间"
+          exitLabel={t('showdown.closeRoom')}
           onExit={goHome}
         />
       );
@@ -133,7 +147,7 @@ export default function App() {
           onRemove={(i) => hostRef.current?.removeSeat(i)}
           onStart={() => hostRef.current?.startGame()}
           onLeave={goHome}
-          leaveLabel="解散房间"
+          leaveLabel={t('showdown.closeRoom')}
         />
       );
     }
@@ -147,13 +161,15 @@ export default function App() {
           myId={clientSeat}
           onAction={(a) => clientRef.current?.send(a)}
           canNextRound={false}
-          exitLabel="退出房间"
+          exitLabel={t('showdown.leaveRoom')}
           onExit={goHome}
         />
       );
     }
     if (lobby) {
-      return <Lobby lobby={lobby} isHost={false} onLeave={goHome} leaveLabel="退出房间" />;
+      return (
+        <Lobby lobby={lobby} isHost={false} onLeave={goHome} leaveLabel={t('showdown.leaveRoom')} />
+      );
     }
   }
 
@@ -162,8 +178,8 @@ export default function App() {
       onSolo={startSolo}
       onCreate={createRoom}
       onJoin={joinRoom}
-      busy={homeBusy}
-      error={homeError}
+      busy={homeBusy && t(homeBusy)}
+      error={homeError && t(homeError)}
     />
   );
 }

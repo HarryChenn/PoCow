@@ -14,7 +14,7 @@ describe('底牌加成 bonusOf3', () => {
   it('Q + K + Joker 视为顺子 ×2（含 Joker 不算同花）', () => {
     const b = bonusOf3([c(12, 'S'), c(13, 'S'), joker()]);
     expect(b.mult).toBe(2);
-    expect(b.tags).toEqual(['顺子']);
+    expect(b.tags).toEqual(['straight']);
   });
 
   it('王炸（双 Joker 在底牌）×3', () => {
@@ -60,47 +60,47 @@ describe('特殊胜利', () => {
     const hand = [c(1, 'S'), c(2, 'H'), c(3, 'S'), c(4, 'H'), c(5, 'S')];
     const ev = evaluateHand(hand);
     expect(ev.kind).toBe('special');
-    expect(ev.specials).toEqual([{ name: '五张顺子', base: 8 }]);
+    expect(ev.specials).toEqual([{ name: 'straight5', base: 8 }]);
     expect(ev.payout).toBe(16);
     expect(ev.power).toBe(108);
   });
 
   it('同花顺 = (8+9) × 2 × 2 = 68×', () => {
     const ev = evaluateHand([c(5, 'H'), c(6, 'H'), c(7, 'H'), c(8, 'H'), c(9, 'H')]);
-    expect(ev.specials.map((s) => s.name)).toEqual(['五张顺子', '五张同花']);
+    expect(ev.specials.map((s) => s.name)).toEqual(['straight5', 'flush5']);
     expect(ev.payout).toBe(68);
     expect(ev.power).toBe(109);
   });
 
   it('炸弹 12×，自带三条 → 36×', () => {
     const ev = evaluateHand([c(9, 'S'), c(9, 'H'), c(9, 'D'), c(9, 'C'), c(2, 'S')]);
-    expect(ev.specials).toEqual([{ name: '炸弹', base: 12 }]);
+    expect(ev.specials).toEqual([{ name: 'bomb', base: 12 }]);
     expect(ev.payout).toBe(36);
     expect(ev.power).toBe(112);
   });
 
   it('五花 10×，含王炸子集 → 30×', () => {
     const ev = evaluateHand([c(11, 'S'), c(12, 'S'), c(13, 'H'), joker(), joker()]);
-    expect(ev.specials).toEqual([{ name: '五花', base: 10 }]);
+    expect(ev.specials).toEqual([{ name: 'allFace', base: 10 }]);
     expect(ev.payout).toBe(30);
   });
 
   it('十小 11×，自带 A-2-3 顺 → 22×', () => {
     const ev = evaluateHand([c(1, 'S'), c(1, 'H'), c(2, 'S'), c(3, 'H'), c(3, 'D')]);
-    expect(ev.specials).toEqual([{ name: '十小', base: 11 }]);
+    expect(ev.specials).toEqual([{ name: 'tenSmall', base: 11 }]);
     expect(ev.payout).toBe(22);
     expect(ev.power).toBe(111);
   });
 
   it('五张同花（无顺）9×，自带 3 张同花 → 18×', () => {
     const ev = evaluateHand([c(2, 'D'), c(5, 'D'), c(8, 'D'), c(11, 'D'), c(13, 'D')]);
-    expect(ev.specials).toEqual([{ name: '五张同花', base: 9 }]);
+    expect(ev.specials).toEqual([{ name: 'flush5', base: 9 }]);
     expect(ev.payout).toBe(18);
   });
 
   it('五花不可能同花（Joker 不算花）', () => {
     const specials = evalSpecials([c(11, 'S'), c(12, 'S'), c(13, 'S'), joker(), joker()]);
-    expect(specials.map((s) => s.name)).toEqual(['五花']);
+    expect(specials.map((s) => s.name)).toEqual(['allFace']);
   });
 });
 
@@ -169,7 +169,7 @@ describe('手动拆分 evaluateChosen', () => {
     expect(ev.kind).toBe('niu');
     expect(ev.power).toBe(5); // 踢脚 4+6 牛牛
     expect(ev.payout).toBe(15);
-    expect(ev.detail).toContain('三条');
+    expect(ev.detail!.tags).toContain('trips');
   });
 
   it('特殊胜利无视拆分选择', () => {
