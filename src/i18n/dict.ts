@@ -8,7 +8,8 @@ export const en = {
   'lang.switch': 'Language',
 
   // 首页
-  'home.subtitle': 'TEXAS NIU',
+  // 英文名就是 PoCow，标题下方不再有第二个名字；中文用「德 牛」。空串 = 不渲染
+  'home.subtitle': '',
   'home.nickname': 'Name',
   'home.playerDefault': 'Player',
   'home.soloSection': 'Solo Practice',
@@ -40,7 +41,7 @@ export const en = {
   'lobby.needPlayers': 'At least 3 players needed (AI can fill the seats).',
 
   // 牌桌
-  'table.brandSub': 'Texas Niu',
+  'table.brandSub': '',
   'table.round': 'Round {n}',
   'table.rules': 'Rules',
   'table.phase.showdown': 'Showdown',
@@ -154,7 +155,7 @@ export const en = {
   'net.hostDisbanded': 'The host closed the room.',
 
   // 规则弹窗
-  'rules.title': 'PoCow Texas Niu · Rules',
+  'rules.title': 'PoCow · Rules',
   'rules.h.basics': 'Basics',
   'rules.basics1': '54 cards (2 Jokers), 5 to each player. J / Q / K / Joker each count 10 points, A counts 1, and a Joker has no suit.',
   'rules.basics2': 'Three ideas drive everything: **power** decides who wins (only power is compared); **multiplier** comes from bottom-card bonuses and never affects who wins; **payout = power × multiplier** is what each loser pays the winner.',

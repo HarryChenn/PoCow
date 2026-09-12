@@ -183,6 +183,11 @@ body::after {
   }
 }
 
+/* 英文没有副标题，标题自己补上原本由副标题撑出的下间距 */
+.title-solo {
+  margin-bottom: 30px;
+}
+
 .game-subtitle {
   font-family: var(--display-font);
   font-size: clamp(1.5rem, 5vw, 2.2rem);

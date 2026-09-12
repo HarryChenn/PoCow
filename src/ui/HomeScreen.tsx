@@ -45,8 +45,8 @@ export function HomeScreen({ onSolo, onCreate, onJoin, busy, error }: Props) {
           </div>
         ))}
       </div>
-      <h1 className="game-title">PoCow</h1>
-      <div className="game-subtitle">{t('home.subtitle')}</div>
+      <h1 className={t('home.subtitle') ? 'game-title' : 'game-title title-solo'}>PoCow</h1>
+      {t('home.subtitle') && <div className="game-subtitle">{t('home.subtitle')}</div>}
 
       <div className="setup-panel">
         <div className="setup-row">

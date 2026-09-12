@@ -11,14 +11,34 @@ const c = (rank: number, suit: Suit | null = 'S'): Card => ({ id: `t${seq++}`, r
 const joker = (): Card => ({ id: `t${seq++}`, rank: JOKER_RANK, suit: null });
 
 describe('文案字典', () => {
-  it('中英文键完全一致，且无空串', () => {
+  // 英文名就是 PoCow，没有第二个名字，这两处副标题按设计为空（组件据此不渲染）
+  const MAY_BE_EMPTY: Record<string, string[]> = { en: ['home.subtitle', 'table.brandSub'], zh: [] };
+
+  it('中英文键完全一致，非豁免项均非空', () => {
     const ek = Object.keys(en).sort();
     const zk = Object.keys(zh).sort();
     expect(zk).toEqual(ek);
     for (const k of ek) {
-      expect(en[k as keyof typeof en].length, `en 缺 ${k}`).toBeGreaterThan(0);
-      expect(zh[k as keyof typeof zh].length, `zh 缺 ${k}`).toBeGreaterThan(0);
+      if (!MAY_BE_EMPTY.en.includes(k)) {
+        expect(en[k as keyof typeof en].length, `en 缺 ${k}`).toBeGreaterThan(0);
+      }
+      if (!MAY_BE_EMPTY.zh.includes(k)) {
+        expect(zh[k as keyof typeof zh].length, `zh 缺 ${k}`).toBeGreaterThan(0);
+      }
     }
+  });
+
+  it('豁免为空的键确实为空——不为空就说明该收回豁免', () => {
+    for (const [lang, keys] of Object.entries(MAY_BE_EMPTY)) {
+      const dict = lang === 'en' ? en : zh;
+      for (const k of keys) expect(dict[k as keyof typeof en], `${lang}.${k}`).toBe('');
+    }
+  });
+
+  it('英文不再出现 Texas Niu，中文保留德牛', () => {
+    for (const [k, v] of Object.entries(en)) expect(/texas\s*niu/i.test(v), `en.${k}`).toBe(false);
+    expect(zh['home.subtitle']).toContain('牛');
+    expect(zh['table.brandSub']).toBe('德牛');
   });
 
   it('同一条文案两种语言的占位符集合一致', () => {

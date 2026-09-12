@@ -42,7 +42,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    document.title = lang === 'zh' ? 'PoCow 德牛' : 'PoCow · Texas Niu';
+    document.title = lang === 'zh' ? 'PoCow 德牛' : 'PoCow';
   }, [lang]);
 
   const setLang = (l: Lang) => {

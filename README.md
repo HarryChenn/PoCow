@@ -1,8 +1,8 @@
-# PoCow · Texas Niu
+# PoCow
 
 **English** · [中文](README.zh-CN.md)
 
-A browser version of *PoCow Texas Niu*, an original 3 + 2 card game. Pure front-end, no server required:
+A browser version of *PoCow*, an original 3 + 2 card game. Pure front-end, no server required:
 
 - **Solo** — one player against 2–7 AI opponents
 - **Online** — create a room, share the 5-character room code, and play with 3–8 people at one table (AI can fill empty seats). Built on peer-to-peer WebRTC (PeerJS): the host's browser is the authoritative server, a disconnected player is taken over by AI, and the room closes when the host leaves
