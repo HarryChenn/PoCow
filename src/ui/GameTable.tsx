@@ -314,7 +314,7 @@ export function GameTable({ state, myId, onAction, canNextRound, exitLabel, onEx
     <div className="table-screen">
       <header className="table-header">
         <span className="brand">
-          PoCow <em>{t('table.brandSub')}</em>
+          PoCow{t('table.brandSub') && <em> {t('table.brandSub')}</em>}
         </span>
         <span className="round-tag">{t('table.round', { n: state.round })}</span>
         <span className="phase-tag">{phaseText()}</span>
